@@ -29,7 +29,7 @@ const ForgotPasswordScreen = () => {
     try {
       await axios.post(`${API_URL}/forgot-password`, { email });
       Alert.alert('📩 Código enviado', 'Revisa tu correo para continuar');
-      navigation.navigate('VerifyCode', { email, from: 'forgotPassword' });
+      navigation.navigate('VerifyResetCode', { email });
     } catch (err) {
       console.error(err);
       Alert.alert(

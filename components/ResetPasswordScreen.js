@@ -35,9 +35,9 @@ const ResetPasswordScreen = () => {
 
     try {
       const res = await axios.post(`${API_URL}/reset-password`, {
-        email,
-        password,
-      });
+  email,
+  newPassword: password, 
+});
 
       Alert.alert('✅ Contraseña actualizada', 'Inicia sesión con tu nueva contraseña');
       navigation.navigate('Login');

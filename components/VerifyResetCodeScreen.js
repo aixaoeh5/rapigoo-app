@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -13,49 +13,15 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_URL = 'http://192.168.100.192:5000/api/auth';
 
-export default function VerifyCodeScreen({ route }) {
+export default function VerifyResetCodeScreen({ route }) {
   const navigation = useNavigation();
-  const {
-    email,
-    type, 
-    newEmail,
-    name,
-    phone,
-    avatar,
-  } = route?.params || {};
+  const { email } = route.params || {};
 
   const [otp, setOtp] = useState(['', '', '', '']);
   const inputRefs = useRef([]);
-
-  useEffect(() => {
-    const sendCode = async () => {
-      try {
-        const resendTo = type === 'email' ? newEmail : email;
-        const token = await AsyncStorage.getItem('token');
-
-        const headers = type === 'email'
-          ? { Authorization: `Bearer ${token}` }
-          : {};
-
-        await axios.post(`${API_URL}/resend-code`, {
-          email: resendTo,
-          context: type === 'email' ? 'update-email' : 'register',
-        }, { headers });
-
-        console.log('📩 Código enviado a:', resendTo);
-        Alert.alert('Código enviado', `Revisa tu correo: ${resendTo}`);
-      } catch (err) {
-        console.error('❌ Error al enviar código:', err);
-        Alert.alert('Error', 'No se pudo enviar el código de verificación');
-      }
-    };
-
-    sendCode();
-  }, []);
 
   const handleChange = (text, index) => {
     const newOtp = [...otp];
@@ -69,86 +35,35 @@ export default function VerifyCodeScreen({ route }) {
 
   const handleSubmit = async () => {
     const code = otp.join('');
-    const token = await AsyncStorage.getItem('token');
 
     try {
-      if (type === 'email') {
-        await axios.post(
-          `${API_URL}/verify-email`,
-          {
-            email: newEmail,
-            code,
-            context: 'update-email',
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        await axios.put(
-          `${API_URL}/update-profile`,
-          {
-            name,
-            email: newEmail,
-            phone,
-            avatar,
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        Alert.alert('✅ Correo actualizado con éxito');
-        navigation.reset({ index: 0, routes: [{ name: 'Profile' }] });
-        return;
-      }
-
-      // Registro
-      const res = await axios.post(`${API_URL}/verify-email`, {
+      const res = await axios.post(`${API_URL}/verify-reset-code`, {
         email,
         code,
       });
 
-      if (res.data.token) {
-        const { token, user } = res.data;
-        await AsyncStorage.setItem('token', token);
-        await AsyncStorage.setItem('user', JSON.stringify(user));
-
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'Home' }],
-        });
+      if (res.data.success) {
+        navigation.navigate('ResetPassword', { email });
       } else {
         Alert.alert('⚠️ Código incorrecto');
       }
     } catch (err) {
-      console.error('❌ Error al verificar:', err);
-      Alert.alert('❌ Error', err.response?.data?.message || 'No se pudo verificar');
+      console.error('❌ Error al verificar código:', err);
+      Alert.alert('Error', err.response?.data?.message || 'No se pudo verificar el código');
     }
   };
 
   const handleResend = async () => {
     try {
-      const resendTo = type === 'email' ? newEmail : email;
-      const token = await AsyncStorage.getItem('token');
-
-      const headers = type === 'email'
-        ? { Authorization: `Bearer ${token}` }
-        : {};
-
       await axios.post(`${API_URL}/resend-code`, {
-        email: resendTo,
-        context: type === 'email' ? 'update-email' : 'register',
-      }, { headers });
+        email,
+        context: 'reset-password',
+      });
 
-      Alert.alert('📩 Código reenviado', `Revisa tu correo: ${resendTo}`);
+      Alert.alert('📩 Código reenviado', `Revisa tu correo: ${email}`);
     } catch (err) {
       console.error('❌ Error al reenviar código:', err);
-      Alert.alert('❌ Error', err.response?.data?.message || 'Ocurrió un error');
+      Alert.alert('Error', err.response?.data?.message || 'Ocurrió un error al reenviar');
     }
   };
 

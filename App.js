@@ -25,6 +25,7 @@ import VerifyCodeScreen from './components/VerifyCodeScreen';
 import ForgotPasswordScreen from './components/ForgotPasswordScreen';
 import ResetPasswordScreen from './components/ResetPasswordScreen';
 import VerifyIdentityScreen from './components/VerifyIdentityScreen';
+import VerifyResetCodeScreen from './components/VerifyResetCodeScreen';
 
 
 
@@ -57,6 +58,7 @@ export default function App() {
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
         <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
         <Stack.Screen name="VerifyIdentity" component={VerifyIdentityScreen} />
+        <Stack.Screen name="VerifyResetCode" component={VerifyResetCodeScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

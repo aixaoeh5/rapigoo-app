@@ -46,7 +46,7 @@ const SocialLogin = () => {
 
 const styles = StyleSheet.create({
  googleButton: {
-  width: 358, 
+  width: 320, 
   alignSelf: 'center',
   flexDirection: 'row',
   alignItems: 'center',

@@ -4,8 +4,16 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const admin = require('../firebaseAdmin');
 
-// LOGIN
+// Configuración de transporte común
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
 
+// LOGIN
 exports.loginUser = async (req, res) => {
   const { email, password } = req.body;
 
@@ -37,14 +45,11 @@ exports.loginUser = async (req, res) => {
 };
 
 // VERIFICAR CONTRASEÑA ACTUAL
-
 exports.verifyPassword = async (req, res) => {
   const userId = req.userId;
   const { password } = req.body;
 
-  if (!password) {
-    return res.status(400).json({ message: 'La contraseña es requerida' });
-  }
+  if (!password) return res.status(400).json({ message: 'La contraseña es requerida' });
 
   try {
     const user = await User.findById(userId);
@@ -53,16 +58,14 @@ exports.verifyPassword = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(401).json({ message: 'Contraseña incorrecta' });
 
-    return res.status(200).json({ message: 'Contraseña verificada correctamente' });
+    res.status(200).json({ message: 'Contraseña verificada correctamente' });
   } catch (err) {
     console.error('❌ Error al verificar contraseña:', err);
-    return res.status(500).json({ message: 'Error del servidor' });
+    res.status(500).json({ message: 'Error del servidor' });
   }
 };
 
-
-// REGISTRO SOLO SI EL CORREO NO ESTÁ VERIFICADO
-
+// REGISTRO
 exports.registerUser = async (req, res) => {
   const { name, email, password, role } = req.body;
 
@@ -85,6 +88,7 @@ exports.registerUser = async (req, res) => {
       user.name = name;
       user.password = hashedPassword;
       user.verificationCode = verificationCode;
+      user.verificationCodeExpires = new Date(Date.now() + 10 * 60 * 1000);
       user.role = role || 'cliente';
     } else {
       user = new User({
@@ -93,21 +97,13 @@ exports.registerUser = async (req, res) => {
         password: hashedPassword,
         role: role || 'cliente',
         verificationCode,
+        verificationCodeExpires: new Date(Date.now() + 10 * 60 * 1000),
       });
     }
 
     await user.save();
 
-    // Envío de correo
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-
-    const mailOptions = {
+    await transporter.sendMail({
       from: `"Rapigoo 🚀" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: 'Verifica tu cuenta en Rapigoo 🛵',
@@ -119,22 +115,16 @@ exports.registerUser = async (req, res) => {
           <p>Ingresalo en la app para activar tu cuenta.</p>
         </div>
       `,
-    };
-
-    await transporter.sendMail(mailOptions);
-
-    res.status(201).json({
-      success: true,
-      message: 'Código de verificación enviado al correo',
     });
+
+    res.status(201).json({ success: true, message: 'Código de verificación enviado al correo' });
   } catch (err) {
     console.error('❌ Error al registrar usuario:', err);
     res.status(500).json({ message: 'Error al registrar usuario' });
   }
 };
 
-// VERIFICAR CÓDIGO DE EMAIL
-
+// VERIFICAR EMAIL
 exports.verifyEmail = async (req, res) => {
   const { email, code, context } = req.body;
 
@@ -148,27 +138,29 @@ exports.verifyEmail = async (req, res) => {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       user = await User.findById(decoded.id);
       if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
-
-      if (user.verificationCode !== code) {
-        return res.status(400).json({ message: 'Código incorrecto' });
-      }
-
-      user.verificationCode = null;
-      await user.save();
-
-      return res.status(200).json({ message: 'Código verificado con éxito' });
+    } else {
+      user = await User.findOne({ email });
+      if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
     }
 
-    user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+    if (user.verificationCodeExpires && user.verificationCodeExpires < Date.now()) {
+      return res.status(400).json({ message: 'El código ha expirado' });
+    }
 
     if (user.verificationCode !== code) {
-      return res.status(400).json({ message: 'Código de verificación incorrecto' });
+      return res.status(400).json({ message: 'Código incorrecto' });
+    }
+
+    user.verificationCode = null;
+    user.verificationCodeExpires = null;
+
+    if (context === 'update-email') {
+      await user.save();
+      return res.status(200).json({ message: 'Código verificado con éxito' });
     }
 
     if (!user.isVerified) {
       user.isVerified = true;
-      user.verificationCode = null;
       await user.save();
 
       const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
@@ -184,9 +176,7 @@ exports.verifyEmail = async (req, res) => {
       });
     }
 
-    user.verificationCode = null;
     await user.save();
-
     return res.status(204).send();
   } catch (err) {
     console.error('❌ Error al verificar código:', err);
