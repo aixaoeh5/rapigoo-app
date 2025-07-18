@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,50 +12,17 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { verifyEmailCode } from '../api/auth';
 
 const API_URL = 'http://192.168.100.192:5000/api/auth';
 
-export default function VerifyCodeScreen({ route }) {
+export default function VerifyRegisterCodeScreen({ route }) {
   const navigation = useNavigation();
-  const {
-    email,
-    type, 
-    newEmail,
-    name,
-    phone,
-    avatar,
-  } = route?.params || {};
+  const { email } = route?.params || {};
 
   const [otp, setOtp] = useState(['', '', '', '']);
   const inputRefs = useRef([]);
-
-  useEffect(() => {
-    const sendCode = async () => {
-      try {
-        const resendTo = type === 'email' ? newEmail : email;
-        const token = await AsyncStorage.getItem('token');
-
-        const headers = type === 'email'
-          ? { Authorization: `Bearer ${token}` }
-          : {};
-
-        await axios.post(`${API_URL}/resend-code`, {
-          email: resendTo,
-          context: type === 'email' ? 'update-email' : 'register',
-        }, { headers });
-
-        console.log('📩 Código enviado a:', resendTo);
-        Alert.alert('Código enviado', `Revisa tu correo: ${resendTo}`);
-      } catch (err) {
-        console.error('❌ Error al enviar código:', err);
-        Alert.alert('Error', 'No se pudo enviar el código de verificación');
-      }
-    };
-
-    sendCode();
-  }, []);
 
   const handleChange = (text, index) => {
     const newOtp = [...otp];
@@ -63,65 +30,24 @@ export default function VerifyCodeScreen({ route }) {
     setOtp(newOtp);
 
     if (text && index < 3) {
-      inputRefs.current[index + 1].focus();
+      inputRefs.current[index + 1]?.focus();
     }
   };
 
   const handleSubmit = async () => {
     const code = otp.join('');
-    const token = await AsyncStorage.getItem('token');
 
     try {
-      if (type === 'email') {
-        await axios.post(
-          `${API_URL}/verify-email`,
-          {
-            email: newEmail,
-            code,
-            context: 'update-email',
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        await axios.put(
-          `${API_URL}/update-profile`,
-          {
-            name,
-            email: newEmail,
-            phone,
-            avatar,
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        Alert.alert('✅ Correo actualizado con éxito');
-        navigation.reset({ index: 0, routes: [{ name: 'Profile' }] });
-        return;
-      }
-
-      // Registro
-      const res = await axios.post(`${API_URL}/verify-email`, {
+      const { token, user } = await verifyEmailCode({
         email,
         code,
+        context: 'register',
       });
 
-      if (res.data.token) {
-        const { token, user } = res.data;
-        await AsyncStorage.setItem('token', token);
+      if (token && user) {
         await AsyncStorage.setItem('user', JSON.stringify(user));
-
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'Home' }],
-        });
+        await AsyncStorage.setItem('token', token);
+        navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
       } else {
         Alert.alert('⚠️ Código incorrecto');
       }
@@ -133,19 +59,13 @@ export default function VerifyCodeScreen({ route }) {
 
   const handleResend = async () => {
     try {
-      const resendTo = type === 'email' ? newEmail : email;
-      const token = await AsyncStorage.getItem('token');
+      await fetch(`${API_URL}/resend-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, context: 'register' }),
+      });
 
-      const headers = type === 'email'
-        ? { Authorization: `Bearer ${token}` }
-        : {};
-
-      await axios.post(`${API_URL}/resend-code`, {
-        email: resendTo,
-        context: type === 'email' ? 'update-email' : 'register',
-      }, { headers });
-
-      Alert.alert('📩 Código reenviado', `Revisa tu correo: ${resendTo}`);
+      Alert.alert('📩 Código reenviado', `Revisa tu correo: ${email}`);
     } catch (err) {
       console.error('❌ Error al reenviar código:', err);
       Alert.alert('❌ Error', err.response?.data?.message || 'Ocurrió un error');
@@ -170,7 +90,9 @@ export default function VerifyCodeScreen({ route }) {
       />
 
       <View style={styles.formGroup}>
-        <Text style={styles.subtitle}>Por favor, ingresa el código de 4 dígitos</Text>
+        <Text style={styles.subtitle}>
+          Por favor, ingresa el código de 4 dígitos que te enviamos
+        </Text>
 
         <View style={styles.otpContainer}>
           {otp.map((digit, index) => (

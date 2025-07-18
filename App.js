@@ -21,11 +21,12 @@ import SettingsScreen from './components/SettingsScreen';
 import ProfileScreen from './components/ProfileScreen';
 import StartupScreen from './components/StartupScreen';
 import EditProfileScreen from './components/EditProfileScreen';
-import VerifyCodeScreen from './components/VerifyCodeScreen';
 import ForgotPasswordScreen from './components/ForgotPasswordScreen';
 import ResetPasswordScreen from './components/ResetPasswordScreen';
 import VerifyIdentityScreen from './components/VerifyIdentityScreen';
 import VerifyResetCodeScreen from './components/VerifyResetCodeScreen';
+import VerifyRegisterCodeScreen from './components/VerifyRegisterCodeScreen'
+import VerifyEmailChangeScreen from './components/VerifyEmailChangeScreen'
 
 
 
@@ -54,11 +55,12 @@ export default function App() {
         <Stack.Screen name="Profile" component={ProfileScreen} />
         <Stack.Screen name="Startup" component={StartupScreen} />
         <Stack.Screen name="EditProfile" component={EditProfileScreen} />
-        <Stack.Screen name="VerifyCode" component={VerifyCodeScreen} />
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
         <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
         <Stack.Screen name="VerifyIdentity" component={VerifyIdentityScreen} />
         <Stack.Screen name="VerifyResetCode" component={VerifyResetCodeScreen} />
+        <Stack.Screen name="VerifyRegisterCode" component={VerifyRegisterCodeScreen} />
+        <Stack.Screen name= "VerifyEmailChange" component= {VerifyEmailChangeScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

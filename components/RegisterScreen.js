@@ -16,14 +16,15 @@ const RegisterScreen = () => {
   const statusBarHeight = getStatusBarHeight();
 
   const handleRegister = async () => {
-    try {
-      const data = await registerUser({ name, email, password });
-      Alert.alert('📩 Código enviado', 'Revisa tu correo para verificar tu cuenta');
-      navigation.navigate('VerifyCode', { email });
-    } catch (error) {
-      console.error('❌ Error al registrar:', error.response?.data?.message || error.message);
-      Alert.alert('Error', error.response?.data?.message || 'No se pudo registrar');
-    }
+try {
+  const data = await registerUser({ name, email, password });
+  Alert.alert('📩 Código enviado', 'Revisa tu correo para verificar tu cuenta');
+  navigation.navigate('VerifyRegisterCode', { email });
+} catch (error) {
+  console.error('❌ Error al registrar:', error.response?.data?.message || error.message);
+  Alert.alert('Error', error.response?.data?.message || 'No se pudo registrar');
+}
+
   };
 
   return (

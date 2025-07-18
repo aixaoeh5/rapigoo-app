@@ -16,7 +16,7 @@ const VerifyIdentityScreen = ({ navigation, route }) => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  if (!newEmail || !name || phone === undefined || !avatar) {
+  if (!newEmail || !name || typeof phone === 'undefined' || !avatar) {
     Alert.alert('Error', 'Faltan datos para continuar');
     navigation.goBack();
     return null;
@@ -42,18 +42,23 @@ const VerifyIdentityScreen = ({ navigation, route }) => {
       });
 
       const text = await response.text();
-      const data = JSON.parse(text);
 
-      if (response.ok) {
-        navigation.navigate('VerifyCode', {
-          type: 'email',
-          newEmail,
-          name,
-          phone,
-          avatar,
-        });
-      } else {
-        Alert.alert('Acceso denegado', data.message || 'Contraseña incorrecta');
+      try {
+        const data = JSON.parse(text);
+
+        if (response.ok) {
+          navigation.navigate('VerifyEmailChange', {
+            newEmail,
+            name,
+            phone,
+            avatar,
+          });
+        } else {
+          Alert.alert('Acceso denegado', data.message || 'Contraseña incorrecta');
+        }
+      } catch (parseError) {
+        console.error('❌ Error al parsear JSON:', parseError);
+        Alert.alert('Respuesta inesperada del servidor');
       }
     } catch (err) {
       console.error('❌ Error verificando contraseña:', err);

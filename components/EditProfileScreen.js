@@ -84,13 +84,16 @@ const EditProfileScreen = ({ navigation }) => {
       return;
     }
 
-    if (phone !== originalPhone) {
-      navigation.navigate('VerifyCode', {
-        type: 'phone',
-        phone,
-      });
-      return;
-    }
+if (phone !== originalPhone) {
+  navigation.navigate('VerifyPhoneScreen', {
+    phone,
+    name,
+    email,
+    avatar,
+  });
+  return;
+}
+
 
     try {
       const response = await fetch('http://10.0.2.2:5000/api/auth/update-profile', {

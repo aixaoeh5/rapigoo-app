@@ -6,13 +6,14 @@ const {
   registerUser,
   getUserProfile,
   updateUserProfile,
-  verifyEmail,
   resendVerificationCode,
   socialLogin,
   forgotPassword,
   verifyPassword,
-  verifyResetCode,       
-  resetPassword,         
+  verifyResetCode,
+  resetPassword,
+  verifyEmailRegister,
+  verifyEmailChange,
 } = require('../controllers/authController');
 
 const verifyToken = require('../middleware/verifyToken');
@@ -20,12 +21,13 @@ const verifyToken = require('../middleware/verifyToken');
 // RUTAS PÚBLICAS
 router.post('/login', loginUser);
 router.post('/register', registerUser);
-router.post('/verify-email', verifyEmail);
-router.post('/resend-code', resendVerificationCode); 
+router.post('/verify-email-register', verifyEmailRegister);     
+router.post('/verify-email-change', verifyToken, verifyEmailChange); 
+router.post('/verify-reset-code', verifyResetCode);             
+router.post('/resend-code', resendVerificationCode);
 router.post('/social-login', socialLogin);
-router.post('/forgot-password', forgotPassword); 
-router.post('/verify-reset-code', verifyResetCode); 
-router.post('/reset-password', resetPassword);       
+router.post('/forgot-password', forgotPassword);
+router.post('/reset-password', resetPassword);
 
 // RUTAS PROTEGIDAS
 router.get('/user', verifyToken, getUserProfile);

@@ -124,23 +124,58 @@ exports.registerUser = async (req, res) => {
   }
 };
 
-// VERIFICAR EMAIL
-exports.verifyEmail = async (req, res) => {
-  const { email, code, context } = req.body;
+// VERIFICAR REGISTRO (email al registrarse)
+exports.verifyEmailRegister = async (req, res) => {
+  const { email, code } = req.body;
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+    if (user.verificationCodeExpires && user.verificationCodeExpires < Date.now()) {
+      return res.status(400).json({ message: 'El código ha expirado' });
+    }
+
+    if (user.verificationCode !== code) {
+      return res.status(400).json({ message: 'Código incorrecto' });
+    }
+
+    user.verificationCode = null;
+    user.verificationCodeExpires = null;
+    user.isVerified = true;
+
+    await user.save();
+
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+
+    return res.status(200).json({
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (err) {
+    console.error('❌ Error en verifyEmailRegister:', err);
+    res.status(500).json({ message: 'Error al verificar código' });
+  }
+};
+
+// VERIFICAR CAMBIO DE CORREO
+exports.verifyEmailChange = async (req, res) => {
+  const { newEmail, code } = req.body;
 
   try {
-    let user;
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ message: 'Token faltante' });
 
-    if (context === 'update-email') {
-      const token = req.headers.authorization?.split(' ')[1];
-      if (!token) return res.status(401).json({ message: 'Token faltante' });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      user = await User.findById(decoded.id);
-      if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
-    } else {
-      user = await User.findOne({ email });
-      if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+    if (!newEmail) {
+      return res.status(400).json({ message: 'El nuevo correo es requerido' });
     }
 
     if (user.verificationCodeExpires && user.verificationCodeExpires < Date.now()) {
@@ -153,36 +188,39 @@ exports.verifyEmail = async (req, res) => {
 
     user.verificationCode = null;
     user.verificationCodeExpires = null;
-
-    if (context === 'update-email') {
-      await user.save();
-      return res.status(200).json({ message: 'Código verificado con éxito' });
-    }
-
-    if (!user.isVerified) {
-      user.isVerified = true;
-      await user.save();
-
-      const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
-
-      return res.status(200).json({
-        token,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-        },
-      });
-    }
+    user.email = newEmail;
 
     await user.save();
-    return res.status(204).send();
+
+    return res.status(200).json({ message: 'Correo actualizado con éxito' });
   } catch (err) {
-    console.error('❌ Error al verificar código:', err);
+    console.error('❌ Error en verifyEmailChange:', err);
     res.status(500).json({ message: 'Error al verificar código' });
   }
 };
+
+// VERIFICAR CÓDIGO PARA RECUPERACIÓN DE CONTRASEÑA
+exports.verifyResetCode = async (req, res) => {
+  const { email, code } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+    if (user.verificationCode !== code) {
+      return res.status(400).json({ message: 'Código incorrecto' });
+    }
+
+    user.verificationCode = null;
+    await user.save();
+
+    return res.status(200).json({ success: true, message: 'Código verificado correctamente' });
+  } catch (err) {
+    console.error('❌ Error en verifyResetCode:', err);
+    res.status(500).json({ message: 'Error al verificar el código' });
+  }
+};
+
 
 
 // REENVIAR CÓDIGO DE VERIFICACIÓN
@@ -382,84 +420,6 @@ exports.updateUserProfile = async (req, res) => {
   }
 };
 
-//RECUPERACION DE CONTRASEÑA
-
-exports.verifyResetCode = async (req, res) => {
-  const { email, code } = req.body;
-
-  try {
-    const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
-
-    if (user.verificationCode !== code) {
-      return res.status(400).json({ message: 'Código incorrecto' });
-    }
-
-    user.verificationCode = null;
-    await user.save();
-
-    return res.status(200).json({ success: true, message: 'Código verificado correctamente' });
-  } catch (err) {
-    console.error('❌ Error en verifyResetCode:', err);
-    res.status(500).json({ message: 'Error al verificar el código' });
-  }
-};
-
-
-
-//REENVIAR CODIGO DE VERIFICACION
-
-exports.resendVerificationCode = async (req, res) => {
-  const { email, context } = req.body;
-
-  try {
-    const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
-
-    if (context === 'register' && user.isVerified) {
-      return res.status(400).json({ message: 'La cuenta ya está verificada' });
-    }
-
-    const newCode = Math.floor(1000 + Math.random() * 9000).toString();
-    user.verificationCode = newCode;
-    user.verificationCodeExpires = new Date(Date.now() + 10 * 60 * 1000); 
-    await user.save();
-
-    const transporter = require('nodemailer').createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-
-    const subject =
-      context === 'update-email'
-        ? 'Confirma tu nuevo correo electrónico'
-        : context === 'reset-password'
-        ? 'Recuperación de contraseña'
-        : 'Verificación de cuenta';
-
-    const html = `
-      <div style="font-family: Arial, sans-serif; padding: 20px;">
-        <p>${subject}</p>
-        <h1>${newCode}</h1>
-      </div>
-    `;
-
-    await transporter.sendMail({
-      from: `"Rapigoo 🚀" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject,
-      html,
-    });
-
-    res.status(200).json({ success: true, message: 'Código enviado correctamente' });
-  } catch (err) {
-    console.error('❌ Error al reenviar código:', err);
-    res.status(500).json({ message: 'Error del servidor al reenviar el código' });
-  }
-};
 
 // RESTABLECER CONTRASEÑA DESPUÉS DEL OTP
 
