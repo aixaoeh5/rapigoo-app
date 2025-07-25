@@ -25,10 +25,13 @@ import ForgotPasswordScreen from './components/ForgotPasswordScreen';
 import ResetPasswordScreen from './components/ResetPasswordScreen';
 import VerifyIdentityScreen from './components/VerifyIdentityScreen';
 import VerifyResetCodeScreen from './components/VerifyResetCodeScreen';
-import VerifyRegisterCodeScreen from './components/VerifyRegisterCodeScreen'
-import VerifyEmailChangeScreen from './components/VerifyEmailChangeScreen'
-
-
+import VerifyRegisterCodeScreen from './components/VerifyRegisterCodeScreen';
+import VerifyEmailChangeScreen from './components/VerifyEmailChangeScreen';
+import RegisterMerchantScreen from './components/RegisterMerchantScreen';
+import VerifyMerchantCodeScreen from './components/VerifyMerchantCodeScreen';
+import BusinessFormStep1Screen from './components/BusinessFormStep1Screen';
+import BusinessFormStep2Screen from './components/BusinessFormStep2Screen';
+import MerchantPendingApprovalScreen from './components/MerchantPendingApprovalScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -61,6 +64,12 @@ export default function App() {
         <Stack.Screen name="VerifyResetCode" component={VerifyResetCodeScreen} />
         <Stack.Screen name="VerifyRegisterCode" component={VerifyRegisterCodeScreen} />
         <Stack.Screen name= "VerifyEmailChange" component= {VerifyEmailChangeScreen} />
+        <Stack.Screen name= "RegisterMerchant" component= {RegisterMerchantScreen} />
+        <Stack.Screen name="VerifyMerchantCode" component={VerifyMerchantCodeScreen} />
+        <Stack.Screen name="BusinessFormStep1" component={BusinessFormStep1Screen} />
+        <Stack.Screen name="BusinessFormStep2" component={BusinessFormStep2Screen} />
+        <Stack.Screen name="MerchantPendingApproval" component={MerchantPendingApprovalScreen} />
+
       </Stack.Navigator>
     </NavigationContainer>
   );

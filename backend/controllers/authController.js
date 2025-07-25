@@ -73,33 +73,39 @@ exports.registerUser = async (req, res) => {
     return res.status(400).json({ message: 'Todos los campos son obligatorios' });
   }
 
+  if (password.length < 8) {
+    return res.status(400).json({ message: 'La contraseña debe tener al menos 8 caracteres' });
+  }
+
   try {
     const existingVerifiedUser = await User.findOne({ email, isVerified: true });
     if (existingVerifiedUser) {
       return res.status(400).json({ message: 'El correo ya está registrado' });
     }
 
+    const existingUser = await User.findOne({ email });
+
+    // Si el usuario fue rechazado, se elimina para permitir un nuevo intento
+    if (existingUser && existingUser.status === 'rechazado') {
+      await User.deleteOne({ email });
+    }
+
+    // Si el correo está pendiente de verificación, no se permite nuevo registro
+    if (existingUser && !existingUser.isVerified) {
+      return res.status(400).json({ message: 'Este correo ya está pendiente de verificación' });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
     const verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
 
-    let user = await User.findOne({ email });
-
-    if (user) {
-      user.name = name;
-      user.password = hashedPassword;
-      user.verificationCode = verificationCode;
-      user.verificationCodeExpires = new Date(Date.now() + 10 * 60 * 1000);
-      user.role = role || 'cliente';
-    } else {
-      user = new User({
-        name,
-        email,
-        password: hashedPassword,
-        role: role || 'cliente',
-        verificationCode,
-        verificationCodeExpires: new Date(Date.now() + 10 * 60 * 1000),
-      });
-    }
+    let user = new User({
+      name,
+      email,
+      password: hashedPassword,
+      role: role || 'cliente',
+      verificationCode,
+      verificationCodeExpires: new Date(Date.now() + 10 * 60 * 1000),
+    });
 
     await user.save();
 
@@ -123,6 +129,8 @@ exports.registerUser = async (req, res) => {
     res.status(500).json({ message: 'Error al registrar usuario' });
   }
 };
+
+
 
 // VERIFICAR REGISTRO (email al registrarse)
 exports.verifyEmailRegister = async (req, res) => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import PhoneInput from 'react-native-phone-number-input';
 
 const EditProfileScreen = ({ navigation }) => {
   const [name, setName] = useState('');
@@ -19,6 +20,7 @@ const EditProfileScreen = ({ navigation }) => {
   const [phone, setPhone] = useState('');
   const [originalPhone, setOriginalPhone] = useState('');
   const [avatar, setAvatar] = useState('https://cdn-icons-png.flaticon.com/512/149/149071.png');
+  const phoneInputRef = useRef(null);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -74,27 +76,20 @@ const EditProfileScreen = ({ navigation }) => {
     const token = await AsyncStorage.getItem('token');
     if (!token) return;
 
+    const formattedPhone =
+      phoneInputRef.current?.getNumberAfterPossiblyEliminatingZero()?.formattedNumber || '';
+
     if (email !== originalEmail) {
       navigation.navigate('VerifyIdentity', {
         newEmail: email,
         name,
-        phone,
+        phone: formattedPhone,
         avatar,
       });
       return;
     }
 
-if (phone !== originalPhone) {
-  navigation.navigate('VerifyPhoneScreen', {
-    phone,
-    name,
-    email,
-    avatar,
-  });
-  return;
-}
-
-
+    // ✅ Ya no se verifica el teléfono, simplemente se guarda
     try {
       const response = await fetch('http://10.0.2.2:5000/api/auth/update-profile', {
         method: 'PUT',
@@ -102,7 +97,7 @@ if (phone !== originalPhone) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ name, email, phone, avatar }),
+        body: JSON.stringify({ name, email, phone: formattedPhone, avatar }),
       });
 
       const text = await response.text();
@@ -112,7 +107,7 @@ if (phone !== originalPhone) {
         const data = JSON.parse(text);
         if (response.ok) {
           Alert.alert('✅ Cambios guardados');
-          navigation.goBack();
+          navigation.goBack(); // o navigation.navigate('Profile')
         } else {
           Alert.alert(data.message || 'Error al guardar');
         }
@@ -165,11 +160,18 @@ if (phone !== originalPhone) {
       <TextInput style={styles.input} value={email} onChangeText={setEmail} />
 
       <Text style={styles.label}>Teléfono</Text>
-      <TextInput
-        style={styles.input}
-        value={phone}
-        onChangeText={setPhone}
-        keyboardType="phone-pad"
+      <PhoneInput
+        ref={phoneInputRef}
+        defaultValue={phone}
+        defaultCode="US"
+        layout="first"
+        onChangeFormattedText={setPhone}
+        withDarkTheme={false}
+        withShadow={false}
+        containerStyle={styles.phoneContainer}
+        textContainerStyle={styles.phoneTextContainer}
+        textInputStyle={styles.phoneInputText}
+        codeTextStyle={styles.phoneCodeText}
       />
 
       <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
@@ -229,6 +231,28 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 10,
     marginBottom: 15,
+    fontSize: 16,
+  },
+  phoneContainer: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 10,
+    marginBottom: 15,
+    width: '100%',
+    height: 50,
+  },
+  phoneTextContainer: {
+    borderTopRightRadius: 10,
+    borderBottomRightRadius: 10,
+    backgroundColor: '#fff',
+    paddingVertical: 0,
+  },
+  phoneInputText: {
+    fontSize: 16,
+    paddingVertical: 0,
+  },
+  phoneCodeText: {
+    fontSize: 16,
   },
   saveButton: {
     backgroundColor: '#000',

@@ -16,7 +16,7 @@ const VerifyPhoneScreen = ({ navigation }) => {
 
   const handleSendCode = async () => {
     if (!phoneNumber.startsWith('+')) {
-      Alert.alert('Agregá el código de país, por ejemplo +54');
+      Alert.alert('Agrega el código de país, por ejemplo +1');
       return;
     }
 
@@ -77,7 +77,7 @@ const VerifyPhoneScreen = ({ navigation }) => {
 
       {!confirmation ? (
         <>
-          <Text style={styles.label}>Número de teléfono (+54...)</Text>
+          <Text style={styles.label}>Número de teléfono (+1...)</Text>
           <TextInput
             style={styles.input}
             value={phoneNumber}

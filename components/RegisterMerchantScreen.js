@@ -1,52 +1,34 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   TextInput,
   StyleSheet,
   TouchableOpacity,
-  Platform,
   Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { getStatusBarHeight } from 'react-native-status-bar-height';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { loginMerchant } from '../api/merchant';
+import { registerMerchant } from '../api/merchant'; // 👈 usar el nuevo archivo merchant.js
 import SocialLogin from './shared/SocialLogin';
 
-const LoginComercianteScreen = () => {
+const RegisterMerchantScreen = () => {
   const navigation = useNavigation();
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const statusBarHeight = getStatusBarHeight();
 
-  useEffect(() => {
-    const checkToken = async () => {
-      const token = await AsyncStorage.getItem('token');
-      if (token) {
-        console.log('🔓 Token ya existe, navegando a HomeComerciante');
-        navigation.navigate('HomeComerciante'); 
-      }
-    };
-    checkToken();
-  }, []);
-
-  const handleLogin = async () => {
+  const handleRegister = async () => {
     try {
-      const user = await loginMerchant({ email, password });
-      console.log('🛍️ Comerciante logueado:', user);
-      navigation.navigate('HomeComerciante');
+      const data = await registerMerchant({ name, email, password });
+      Alert.alert('📩 Código enviado', 'Revisa tu correo para verificar tu cuenta');
+      navigation.navigate('VerifyMerchantCode', { email }); 
     } catch (error) {
-      console.error(
-        '❌ Error al iniciar sesión:',
-        error.response?.data?.message || error.message
-      );
-      Alert.alert(
-        'Error',
-        error.response?.data?.message || 'Error al iniciar sesión'
-      );
+      console.error('❌ Error al registrar comerciante:', error.response?.data?.message || error.message);
+      Alert.alert('Error', error.response?.data?.message || 'No se pudo registrar');
     }
   };
 
@@ -56,9 +38,17 @@ const LoginComercianteScreen = () => {
         <Icon name="chevron-back" size={26} color="black" />
       </TouchableOpacity>
 
-      <Text style={styles.title}>Bienvenido Comerciante</Text>
+      <Text style={styles.title}>Crea tu cuenta de negocio</Text>
 
-      <Text style={styles.label}>Ingresar Email</Text>
+      <Text style={styles.label}>Nombre del dueño</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Nombre"
+        value={name}
+        onChangeText={setName}
+      />
+
+      <Text style={styles.label}>Correo electrónico</Text>
       <TextInput
         style={styles.input}
         placeholder="Email"
@@ -67,7 +57,7 @@ const LoginComercianteScreen = () => {
         onChangeText={setEmail}
       />
 
-      <Text style={styles.label}>Ingresar contraseña</Text>
+      <Text style={styles.label}>Contraseña</Text>
       <View style={styles.passwordWrapper}>
         <TextInput
           style={styles.passwordInput}
@@ -76,43 +66,22 @@ const LoginComercianteScreen = () => {
           value={password}
           onChangeText={setPassword}
         />
-        <TouchableOpacity
-          onPress={() => setShowPassword(!showPassword)}
-          style={styles.passwordIcon}
-        >
+        <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.passwordIcon}>
           <Icon name={showPassword ? 'eye-off' : 'eye'} size={20} color="gray" />
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity
-        style={styles.forgotPasswordButton}
-        onPress={() => navigation.navigate('ForgotMerchantPassword')} 
-      >
-        <Text style={styles.forgotPasswordText}>¿Olvidaste la contraseña?</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.button} onPress={handleLogin}>
-        <Text style={styles.buttonText}>Iniciar Sesión</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.grayText}>¿No tienes una cuenta?</Text>
-
-      <TouchableOpacity
-        style={styles.createAccountButton}
-        onPress={() => navigation.navigate('RegisterMerchant')}
-      >
-        <Text style={styles.buttonText}>Crear cuenta</Text>
+      <TouchableOpacity style={styles.button} onPress={handleRegister}>
+        <Text style={styles.buttonText}>Registrarse</Text>
       </TouchableOpacity>
 
       <View style={styles.dividerContainer}>
         <View style={styles.line} />
-        <Text style={styles.continueText}>Continuar con</Text>
+        <Text style={styles.continueText}>Registrarse con</Text>
         <View style={styles.line} />
       </View>
 
-      <View style={styles.socialButtonsContainer}>
-        <SocialLogin />
-      </View>
+      <SocialLogin />
     </View>
   );
 };
@@ -136,6 +105,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 30,
     alignSelf: 'center',
+    bottom: 15,
   },
   label: {
     fontSize: 14,
@@ -172,29 +142,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 10,
   },
-  createAccountButton: {
-    backgroundColor: 'black',
-    padding: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 10,
-  },
   buttonText: {
     color: 'white',
     fontWeight: 'bold',
-  },
-  forgotPasswordButton: {
-    alignSelf: 'flex-end',
-    marginBottom: 10,
-  },
-  forgotPasswordText: {
-    color: 'gray',
-  },
-  grayText: {
-    color: 'gray',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 20,
   },
   dividerContainer: {
     flexDirection: 'row',
@@ -210,10 +160,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 10,
     color: 'gray',
   },
-  socialButtonsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
 });
 
-export default LoginComercianteScreen;
+export default RegisterMerchantScreen;
