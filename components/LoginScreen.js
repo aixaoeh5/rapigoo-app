@@ -52,9 +52,9 @@ const LoginScreen = () => {
 
   return (
     <View style={[styles.container, { paddingTop: statusBarHeight }]}>
-      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-        <Icon name="chevron-back" size={26} color="black" />
-      </TouchableOpacity>
+<TouchableOpacity style={styles.backButton} onPress={() => navigation.navigate('UserType')}>
+  <Icon name="chevron-back" size={26} color="black" />
+</TouchableOpacity>
 
       <Text style={styles.title}>Bienvenido de nuevo</Text>
 

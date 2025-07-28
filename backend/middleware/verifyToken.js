@@ -11,8 +11,11 @@ const verifyToken = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
-    req.userId = decoded.id; 
+
+    req.user = {
+      id: decoded.id, 
+    };
+
     next();
   } catch (err) {
     console.error('❌ Error al verificar token:', err);

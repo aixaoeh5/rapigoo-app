@@ -8,9 +8,9 @@ export default function UserTypeScreen() {
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-        <Icon name="chevron-back" size={26} color="black" />
-      </TouchableOpacity>
+<TouchableOpacity style={styles.backButton} onPress={() => navigation.navigate('Welcome')}>
+  <Icon name="chevron-back" size={26} color="black" />
+</TouchableOpacity>
 
       <Text style={styles.logo}>
         RAPI

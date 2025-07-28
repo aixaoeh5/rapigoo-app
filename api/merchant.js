@@ -39,7 +39,7 @@ export const loginMerchant = async ({ email, password }) => {
   await AsyncStorage.setItem('token', response.data.token);
   await AsyncStorage.setItem('user', JSON.stringify(response.data.user));
 
-  return response.data.user;
+  return response.data;
 };
 
 // GUARDAR PERFIL DE NEGOCIO

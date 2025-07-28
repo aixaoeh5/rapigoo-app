@@ -139,27 +139,27 @@ exports.loginMerchant = async (req, res) => {
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
-    res.status(200).json({
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
-    });
+res.status(200).json({
+  token,
+  user: {
+    id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    isVerified: user.isVerified,
+    merchantStatus: user.merchantStatus || 'pendiente',
+  },
+});
   } catch (err) {
     console.error('❌ Error en loginMerchant:', err);
     res.status(500).json({ message: 'Error al iniciar sesión del comerciante' });
   }
 };
 
-
-
 // GUARDAR DATOS DEL NEGOCIO
 exports.createMerchantProfile = async (req, res) => {
   try {
-    const userId = req.user.id; // Viene desde verifyToken
+    const userId = req.user.id; 
     const {
       businessName,
       rnc,
@@ -196,5 +196,41 @@ exports.createMerchantProfile = async (req, res) => {
   } catch (err) {
     console.error('❌ Error al guardar el negocio:', err);
     res.status(500).json({ message: 'Error interno al guardar el perfil del negocio' });
+  }
+};
+
+exports.getAllMerchants = async (req, res) => {
+  try {
+    const merchants = await User.find({ role: 'comerciante' }).sort({ createdAt: -1 });
+    res.status(200).json(merchants);
+  } catch (err) {
+    console.error('❌ Error al obtener comerciantes:', err);
+    res.status(500).json({ message: 'Error del servidor' });
+  }
+};
+
+
+//APROBACION DEL ADMIN
+exports.updateMerchantStatus = async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  if (!['aprobado', 'rechazado'].includes(status)) {
+    return res.status(400).json({ message: 'Estado inválido' });
+  }
+
+  try {
+    const user = await User.findById(id);
+    if (!user || user.role !== 'comerciante') {
+      return res.status(404).json({ message: 'Comerciante no encontrado' });
+    }
+
+    user.merchantStatus = status;
+    await user.save();
+
+    res.status(200).json({ message: `Comerciante ${status} con éxito` });
+  } catch (err) {
+    console.error('❌ Error al actualizar estado del comerciante:', err);
+    res.status(500).json({ message: 'Error al actualizar estado del comerciante' });
   }
 };

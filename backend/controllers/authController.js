@@ -46,13 +46,12 @@ exports.loginUser = async (req, res) => {
 
 // VERIFICAR CONTRASEÑA ACTUAL
 exports.verifyPassword = async (req, res) => {
-  const userId = req.userId;
   const { password } = req.body;
 
   if (!password) return res.status(400).json({ message: 'La contraseña es requerida' });
 
   try {
-    const user = await User.findById(userId);
+    const user = await User.findById(req.user.id); 
     if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
 
     const isMatch = await bcrypt.compare(password, user.password);
@@ -64,6 +63,7 @@ exports.verifyPassword = async (req, res) => {
     res.status(500).json({ message: 'Error del servidor' });
   }
 };
+
 
 // REGISTRO
 exports.registerUser = async (req, res) => {
@@ -85,26 +85,34 @@ exports.registerUser = async (req, res) => {
 
     const existingUser = await User.findOne({ email });
 
-    // Si el usuario fue rechazado, se elimina para permitir un nuevo intento
     if (existingUser && existingUser.status === 'rechazado') {
       await User.deleteOne({ email });
     }
 
-    // Si el correo está pendiente de verificación, no se permite nuevo registro
     if (existingUser && !existingUser.isVerified) {
-      return res.status(400).json({ message: 'Este correo ya está pendiente de verificación' });
+      const isExpired =
+        existingUser.verificationCodeExpires &&
+        existingUser.verificationCodeExpires < Date.now();
+
+      if (isExpired) {
+        await User.deleteOne({ _id: existingUser._id });
+      } else {
+        return res
+          .status(400)
+          .json({ message: 'Este correo ya está pendiente de verificación' });
+      }
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
 
-    let user = new User({
+    const user = new User({
       name,
       email,
       password: hashedPassword,
       role: role || 'cliente',
       verificationCode,
-      verificationCodeExpires: new Date(Date.now() + 10 * 60 * 1000),
+      verificationCodeExpires: new Date(Date.now() + 10 * 60 * 1000), 
     });
 
     await user.save();
@@ -123,13 +131,14 @@ exports.registerUser = async (req, res) => {
       `,
     });
 
-    res.status(201).json({ success: true, message: 'Código de verificación enviado al correo' });
+    res
+      .status(201)
+      .json({ success: true, message: 'Código de verificación enviado al correo' });
   } catch (err) {
     console.error('❌ Error al registrar usuario:', err);
     res.status(500).json({ message: 'Error al registrar usuario' });
   }
 };
-
 
 
 // VERIFICAR REGISTRO (email al registrarse)
@@ -308,7 +317,7 @@ exports.resendVerificationCode = async (req, res) => {
 
 exports.getUserProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.userId).select('-password');
+    const user = await User.findById(req.user.id).select('-password'); 
     if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
     res.status(200).json(user);
   } catch (err) {
@@ -316,6 +325,7 @@ exports.getUserProfile = async (req, res) => {
     res.status(500).json({ message: 'Error al obtener perfil' });
   }
 };
+
 
 // SOCIAL LOGIN
 
@@ -404,7 +414,8 @@ exports.forgotPassword = async (req, res) => {
 
 exports.updateUserProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.userId);
+    const user = await User.findById(req.user.id); 
+
     if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
 
     if (req.body.email && req.body.email !== user.email) {
@@ -427,6 +438,7 @@ exports.updateUserProfile = async (req, res) => {
     res.status(500).json({ message: 'Error al actualizar perfil' });
   }
 };
+
 
 
 // RESTABLECER CONTRASEÑA DESPUÉS DEL OTP

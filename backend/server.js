@@ -1,32 +1,39 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
+const cors = require('cors');
 
 dotenv.config();
 
 const app = express();
+
+// Middlewares
 app.use(express.json());
+app.use(cors({
+  origin: 'http://localhost:3000',
+  credentials: true,
+}));
 
-// Rutas de autenticación (usuarios normales)
-const authRoutes = require('./routes/authRoutes');
-app.use('/api/auth', authRoutes);
-
-//  Rutas de comerciantes
-const merchantRoutes = require('./routes/merchantRoutes');
-app.use('/api/merchant', merchantRoutes);
-
-//  Ruta base
-app.get('/', (req, res) => {
-  res.send('Backend funcionando correctamente 🔥');
-});
-
-//  Conexión a MongoDB
+// Conexión a MongoDB
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
 .then(() => console.log('✅ Conectado a MongoDB'))
 .catch((err) => console.error('❌ Error al conectar a MongoDB:', err));
+
+// Rutas de autenticación para usuarios normales
+const authRoutes = require('./routes/authRoutes');
+app.use('/api/auth', authRoutes);
+
+// Rutas para comerciantes (registro, login, perfil, obtener lista)
+const merchantRoutes = require('./routes/merchantRoutes');
+app.use('/api/merchant', merchantRoutes);
+
+// Ruta de prueba
+app.get('/', (req, res) => {
+  res.send('Backend funcionando correctamente 🔥');
+});
 
 // Iniciar servidor
 const PORT = process.env.PORT || 5000;

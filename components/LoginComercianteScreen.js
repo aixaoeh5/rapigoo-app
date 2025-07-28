@@ -33,22 +33,34 @@ const LoginComercianteScreen = () => {
     checkToken();
   }, []);
 
-  const handleLogin = async () => {
-    try {
-      const user = await loginMerchant({ email, password });
-      console.log('🛍️ Comerciante logueado:', user);
+const handleLogin = async () => {
+  try {
+    const response = await loginMerchant({ email, password });
+
+    await AsyncStorage.setItem('token', response.token);
+    await AsyncStorage.setItem('user', JSON.stringify(response.user));
+
+    const { isVerified, merchantStatus } = response.user;
+
+    if (!isVerified) {
+      navigation.navigate('VerifyMerchantCodeScreen', { email });
+    } else if (merchantStatus === 'pendiente') {
+      navigation.navigate('MerchantPendingApproval');
+    } else {
       navigation.navigate('HomeComerciante');
-    } catch (error) {
-      console.error(
-        '❌ Error al iniciar sesión:',
-        error.response?.data?.message || error.message
-      );
-      Alert.alert(
-        'Error',
-        error.response?.data?.message || 'Error al iniciar sesión'
-      );
     }
-  };
+  } catch (error) {
+    console.error(
+      '❌ Error al iniciar sesión:',
+      error.response?.data?.message || error.message
+    );
+    Alert.alert(
+      'Error',
+      error.response?.data?.message || 'Error al iniciar sesión'
+    );
+  }
+};
+
 
   return (
     <View style={[styles.container, { paddingTop: statusBarHeight }]}>
