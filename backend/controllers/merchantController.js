@@ -234,3 +234,41 @@ exports.updateMerchantStatus = async (req, res) => {
     res.status(500).json({ message: 'Error al actualizar estado del comerciante' });
   }
 };
+
+
+//EDIT PROFILE
+exports.updateMerchantProfile = async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ message: 'Token faltante' });
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+    if (!user || user.role !== 'comerciante') {
+      return res.status(403).json({ message: 'No autorizado' });
+    }
+
+    const { name, email, phone, avatar, business } = req.body;
+
+    if (name) user.name = name;
+    if (email) user.email = email;
+    if (phone) user.phone = phone;
+    if (avatar) user.avatar = avatar;
+    
+    if (!user.business) user.business = {};
+    if (!user.business.schedule) user.business.schedule = {};
+
+
+    if (business?.address) user.business.address = business.address;
+    if (business?.socials) user.business.socials = business.socials;
+    if (business?.schedule?.opening) user.business.schedule.opening = business.schedule.opening;
+    if (business?.schedule?.closing) user.business.schedule.closing = business.schedule.closing;
+
+    await user.save();
+
+    return res.status(200).json({ message: 'Perfil actualizado correctamente' });
+  } catch (error) {
+    console.error('❌ Error en updateMerchantProfile:', error);
+    return res.status(500).json({ message: 'Error interno al actualizar perfil' });
+  }
+};

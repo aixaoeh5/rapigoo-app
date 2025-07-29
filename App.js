@@ -32,6 +32,8 @@ import VerifyMerchantCodeScreen from './components/VerifyMerchantCodeScreen';
 import BusinessFormStep1Screen from './components/BusinessFormStep1Screen';
 import BusinessFormStep2Screen from './components/BusinessFormStep2Screen';
 import MerchantPendingApprovalScreen from './components/MerchantPendingApprovalScreen';
+import ProfileMerchantScreen from './components/ProfileMerchantScreen';
+import EditMerchantProfileScreen from './components/EditMerchantProfileScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -69,6 +71,8 @@ export default function App() {
         <Stack.Screen name="BusinessFormStep1" component={BusinessFormStep1Screen} />
         <Stack.Screen name="BusinessFormStep2" component={BusinessFormStep2Screen} />
         <Stack.Screen name="MerchantPendingApproval" component={MerchantPendingApprovalScreen} />
+        <Stack.Screen name="ProfileMerchant" component={ProfileMerchantScreen} />
+        <Stack.Screen name="EditMerchantProfile" component={EditMerchantProfileScreen} />
 
       </Stack.Navigator>
     </NavigationContainer>

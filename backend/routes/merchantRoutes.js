@@ -5,24 +5,24 @@ const merchantController = require('../controllers/merchantController');
 
 const {
   registerMerchant,
-  verifyMerchantEmail,
   loginMerchant,
+  verifyMerchantEmail,
   createMerchantProfile,
-  getAllMerchants, 
+  updateMerchantProfile,
+  getAllMerchants,
+  updateMerchantStatus,
 } = merchantController;
 
 // Registro y autenticación
-router.post('/register', registerMerchant);
-router.post('/login', loginMerchant);
-router.post('/verify-email-register', verifyMerchantEmail);
+router.post('/register', registerMerchant);                   
+router.post('/login', loginMerchant);                         
+router.post('/verify-email-register', verifyMerchantEmail);   
 
-// Guardar perfil del negocio (protegido)
-router.post('/profile', verifyToken, createMerchantProfile);
+// Perfil del comerciante
+router.post('/profile', verifyToken, createMerchantProfile);  
+router.put('/profile', verifyToken, updateMerchantProfile);  
 
-// Obtener todos los comerciantes (para el backoffice)
-router.get('/', getAllMerchants); 
-
-// Aprobar o rechazar comerciantes
-router.put('/status/:id', merchantController.updateMerchantStatus);
-
+// Admin
+router.get('/', getAllMerchants);                            
+router.put('/status/:id', updateMerchantStatus);              
 module.exports = router;
