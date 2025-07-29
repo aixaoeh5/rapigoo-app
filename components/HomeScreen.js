@@ -1,8 +1,44 @@
-import { View, Text, ScrollView, StyleSheet, Image, TouchableOpacity } from 'react-native';
-import { useNavigation } from '@react-navigation/native'; 
+import React from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+} from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { categories } from '../utils/categories';
 
 const HomeScreen = () => {
-  const navigation = useNavigation(); 
+  const navigation = useNavigation();
+
+  const renderCategories = () => {
+    const rows = [];
+    for (let i = 0; i < categories.length; i += 2) {
+      const row = (
+        <View key={i} style={styles.categoryRow}>
+          {[categories[i], categories[i + 1]].map((item, index) => {
+            if (!item) return null;
+            return (
+              <TouchableOpacity
+                key={index}
+                style={styles.categoryBox}
+                onPress={() =>
+                  navigation.navigate('Category', { category: item.name })
+                }
+              >
+                <Text style={styles.categoryText}>{item.name}</Text>
+                <Image style={styles.categoryImage} source={item.image} />
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      );
+      rows.push(row);
+    }
+    return rows;
+  };
 
   return (
     <View style={styles.container}>
@@ -19,77 +55,7 @@ const HomeScreen = () => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.categoriesContent}
       >
-        <View style={styles.categoryRow}>
-          <TouchableOpacity
-            style={styles.categoryBox}
-            onPress={() => navigation.navigate('Category', { category: 'Colmado' })}
-          >
-            <Text style={styles.categoryText}>Colmado</Text>
-            <Image
-              style={styles.categoryImage}
-              source={require('../assets/colmado.png')}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.categoryBox}
-            onPress={() => navigation.navigate('Category', { category: 'Postres' })}
-          >
-            <Text style={styles.categoryText}>Postres</Text>
-            <Image
-              style={styles.categoryImage}
-              source={require('../assets/postres.png')}
-            />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.categoryRow}>
-          <TouchableOpacity
-            style={styles.categoryBox}
-            onPress={() => navigation.navigate('Category', { category: 'Masajes' })}
-          >
-            <Text style={styles.categoryText}>Masajes</Text>
-            <Image
-              style={styles.categoryImage}
-              source={require('../assets/masajes.png')}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.categoryBox}
-            onPress={() => navigation.navigate('Category', { category: 'Limpieza' })}
-          >
-            <Text style={styles.categoryText}>Limpieza</Text>
-            <Image
-              style={styles.categoryImage}
-              source={require('../assets/limpieza.png')}
-            />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.categoryRow}>
-          <TouchableOpacity
-            style={styles.categoryBox}
-            onPress={() => navigation.navigate('Category', { category: 'Farmacia' })}
-          >
-            <Text style={styles.categoryText}>Farmacia</Text>
-            <Image
-              style={styles.categoryImage}
-              source={require('../assets/farmacia.png')}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.categoryBox}
-            onPress={() => navigation.navigate('Category', { category: 'Belleza' })}
-          >
-            <Text style={styles.categoryText}>Belleza</Text>
-            <Image
-              style={styles.categoryImage}
-              source={require('../assets/belleza.png')}
-            />
-          </TouchableOpacity>
-        </View>
+        {renderCategories()}
       </ScrollView>
 
       <View style={styles.bottomBar}>

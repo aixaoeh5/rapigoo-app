@@ -59,13 +59,18 @@ const BusinessFormStep1Screen = ({ route }) => {
           selectedValue={category}
           onValueChange={(value) => setCategory(value)}
         >
-          <Picker.Item label="Selecciona una categoría..." value="" />
-<Picker.Item label="Colmado" value="Colmado" />
-<Picker.Item label="Postres" value="Postres" />
-<Picker.Item label="Estética" value="Estética" />
-<Picker.Item label="Barbería" value="Barbería" />
-<Picker.Item label="Masajes" value="Masajes" />
-
+  <Picker.Item label="Seleccione una categoría" value="" />
+  <Picker.Item label="Colmado" value="Colmado" />
+  <Picker.Item label="Farmacia" value="Farmacia" />
+  <Picker.Item label="Belleza" value="Belleza" />
+  <Picker.Item label="Restaurantes" value="Restaurantes" />
+  <Picker.Item label="Pizzería" value="Pizzería" />
+  <Picker.Item label="Comedores" value="Comedores" />
+  <Picker.Item label="Comida rápida" value="Comida rápida" />
+  <Picker.Item label="Postres" value="Postres" />
+  <Picker.Item label="Panadería" value="Panadería" />
+  <Picker.Item label="Heladería" value="Heladería" />
+  <Picker.Item label="Ferretería" value="Ferretería" />
         </Picker>
       </View>
 

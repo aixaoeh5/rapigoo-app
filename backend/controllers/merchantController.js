@@ -301,6 +301,18 @@ const updateMerchantStatus = async (req, res) => {
   }
 };
 
+// Obtener todos los comerciantes 
+const getAllMerchantsForAdmin = async (req, res) => {
+  try {
+    const merchants = await User.find({ role: 'comerciante' });
+    res.status(200).json(merchants);
+  } catch (err) {
+    console.error('Error al obtener comerciantes para admin:', err);
+    res.status(500).json({ message: 'Error interno del servidor' });
+  }
+};
+
+
 module.exports = {
   registerMerchant,
   loginMerchant,
@@ -310,4 +322,5 @@ module.exports = {
   getAllMerchants,
   updateMerchantStatus,
   getMerchantsByCategory, 
+  getAllMerchantsForAdmin,
 };

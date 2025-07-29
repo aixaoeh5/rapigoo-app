@@ -11,21 +11,25 @@ const {
   updateMerchantProfile,
   getAllMerchants,
   updateMerchantStatus,
-  getMerchantsByCategory, 
+  getMerchantsByCategory,
+  getAllMerchantsForAdmin, 
 } = merchantController;
 
-// Registro y autenticación
-router.post('/register', registerMerchant);                   
+// ✅ Registro y autenticación
+router.post('/register', registerMerchant);                    
 router.post('/login', loginMerchant);                         
-router.post('/verify-email-register', verifyMerchantEmail);   
+router.post('/verify-email-register', verifyMerchantEmail);    
 
-// Perfil del comerciante
-router.post('/profile', verifyToken, createMerchantProfile);  
-router.put('/profile', verifyToken, updateMerchantProfile);  
+// ✅ Perfil del comerciante
+router.post('/profile', verifyToken, createMerchantProfile);   
+router.put('/profile', verifyToken, updateMerchantProfile);    
 
-// Admin y categorías
-router.get('/', getAllMerchants);                            
-router.put('/status/:id', updateMerchantStatus);             
-router.get('/category', getMerchantsByCategory); 
+// ✅ Categorías y filtrado
+router.get('/category', getMerchantsByCategory);              
+router.get('/', getAllMerchants);                              
+
+// ✅ Admin
+router.get('/all', getAllMerchantsForAdmin);                 
+router.put('/status/:id', updateMerchantStatus);              
 
 module.exports = router;

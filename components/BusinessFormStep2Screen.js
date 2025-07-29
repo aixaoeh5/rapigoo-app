@@ -10,8 +10,7 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import Icon from 'react-native-vector-icons/Ionicons'; // 👈 botón atrás
-
+import Icon from 'react-native-vector-icons/Ionicons'; 
 const BusinessFormStep2Screen = () => {
   const navigation = useNavigation();
   const route = useRoute();
@@ -36,8 +35,8 @@ const BusinessFormStep2Screen = () => {
         rnc,
         category,
         address,
-        openHour: openingHours,   // 👈 nombre esperado por el backend
-        closeHour: closingHours,  // 👈 nombre esperado por el backend
+        openHour: openingHours,  
+        closeHour: closingHours,  
         description,
       }, {
         headers: {

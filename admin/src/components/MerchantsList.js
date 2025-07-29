@@ -4,18 +4,26 @@ import axios from 'axios';
 const MerchantsList = () => {
   const [merchants, setMerchants] = useState([]);
 
-  useEffect(() => {
-    const fetchMerchants = async () => {
-      try {
-        const res = await axios.get('http://localhost:5000/api/merchant');
-        setMerchants(res.data);
-      } catch (error) {
-        console.error('Error al obtener comerciantes:', error);
-      }
-    };
+useEffect(() => {
+  const fetchMerchants = async () => {
+    try {
+      const res = await axios.get('http://localhost:5000/api/merchant/all');
 
-    fetchMerchants();
-  }, []);
+      const sortedMerchants = res.data.sort((a, b) => {
+        const dateA = new Date(parseInt(a._id.toString().substring(0, 8), 16) * 1000);
+        const dateB = new Date(parseInt(b._id.toString().substring(0, 8), 16) * 1000);
+        return dateB - dateA; 
+      });
+
+      setMerchants(sortedMerchants);
+    } catch (error) {
+      console.error('Error al obtener comerciantes:', error);
+    }
+  };
+
+  fetchMerchants();
+}, []);
+
   
 const updateStatus = async (id, newStatus) => {
   try {
