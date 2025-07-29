@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 
-//  NODEMAILER
+// NODEMAILER CONFIG
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -12,8 +12,8 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// REGISTRO COMERCIANTES
-exports.registerMerchant = async (req, res) => {
+// REGISTRO COMERCIANTE
+const registerMerchant = async (req, res) => {
   const { name, email, password } = req.body;
 
   if (!name || !email || !password) {
@@ -82,9 +82,8 @@ exports.registerMerchant = async (req, res) => {
   }
 };
 
-
-// VERIFICACION DE CODIGO
-exports.verifyMerchantEmail = async (req, res) => {
+// VERIFICAR CODIGO
+const verifyMerchantEmail = async (req, res) => {
   const { email, code } = req.body;
 
   try {
@@ -122,8 +121,8 @@ exports.verifyMerchantEmail = async (req, res) => {
   }
 };
 
-// LOGIN COMERCIANTE
-exports.loginMerchant = async (req, res) => {
+// LOGIN
+const loginMerchant = async (req, res) => {
   const { email, password } = req.body;
 
   try {
@@ -139,27 +138,27 @@ exports.loginMerchant = async (req, res) => {
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
-res.status(200).json({
-  token,
-  user: {
-    id: user._id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    isVerified: user.isVerified,
-    merchantStatus: user.merchantStatus || 'pendiente',
-  },
-});
+    res.status(200).json({
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isVerified: user.isVerified,
+        merchantStatus: user.merchantStatus || 'pendiente',
+      },
+    });
   } catch (err) {
     console.error('❌ Error en loginMerchant:', err);
     res.status(500).json({ message: 'Error al iniciar sesión del comerciante' });
   }
 };
 
-// GUARDAR DATOS DEL NEGOCIO
-exports.createMerchantProfile = async (req, res) => {
+// CREAR PERFIL DEL NEGOCIO
+const createMerchantProfile = async (req, res) => {
   try {
-    const userId = req.user.id; 
+    const userId = req.user.id;
     const {
       businessName,
       rnc,
@@ -199,19 +198,86 @@ exports.createMerchantProfile = async (req, res) => {
   }
 };
 
-exports.getAllMerchants = async (req, res) => {
+// ACTUALIZAR PERFIL
+const updateMerchantProfile = async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ message: 'Token faltante' });
+
   try {
-    const merchants = await User.find({ role: 'comerciante' }).sort({ createdAt: -1 });
-    res.status(200).json(merchants);
-  } catch (err) {
-    console.error('❌ Error al obtener comerciantes:', err);
-    res.status(500).json({ message: 'Error del servidor' });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+    if (!user || user.role !== 'comerciante') {
+      return res.status(403).json({ message: 'No autorizado' });
+    }
+
+    const { name, email, phone, avatar, business } = req.body;
+
+    if (name) user.name = name;
+    if (email) user.email = email;
+    if (phone) user.phone = phone;
+    if (avatar) user.avatar = avatar;
+
+    if (!user.business) user.business = {};
+    if (!user.business.schedule) user.business.schedule = {};
+
+    if (business?.address) user.business.address = business.address;
+    if (business?.socials) user.business.socials = business.socials;
+    if (business?.schedule?.opening) user.business.schedule.opening = business.schedule.opening;
+    if (business?.schedule?.closing) user.business.schedule.closing = business.schedule.closing;
+
+    await user.save();
+
+    return res.status(200).json({ message: 'Perfil actualizado correctamente' });
+  } catch (error) {
+    console.error('❌ Error en updateMerchantProfile:', error);
+    return res.status(500).json({ message: 'Error interno al actualizar perfil' });
   }
 };
 
+// OBTENER COMERCIANTES POR CATEGORÍA
+const getAllMerchants = async (req, res) => {
+  try {
+    const { category } = req.query;
 
-//APROBACION DEL ADMIN
-exports.updateMerchantStatus = async (req, res) => {
+    let filter = { role: 'comerciante', merchantStatus: 'aprobado' };
+
+    if (category) {
+      filter['business.category'] = category;
+    }
+
+    const merchants = await User.find(filter);
+
+    res.json(merchants);
+  } catch (error) {
+    console.error('Error al obtener comerciantes:', error);
+    res.status(500).json({ message: 'Error al obtener comerciantes' });
+  }
+};
+
+const getMerchantsByCategory = async (req, res) => {
+  try {
+    const { category } = req.query;
+
+    if (!category) {
+      return res.status(400).json({ message: 'Categoría no especificada' });
+    }
+
+    const merchants = await User.find({
+      role: 'comerciante',
+      'business.category': category,
+      isVerified: true,
+      merchantStatus: 'aprobado',
+    });
+
+    res.json(merchants);
+  } catch (error) {
+    console.error('Error al filtrar comerciantes por categoría:', error);
+    res.status(500).json({ message: 'Error interno del servidor' });
+  }
+};
+
+// ACTUALIZAR ESTADO DE APROBACIÓN
+const updateMerchantStatus = async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
 
@@ -235,40 +301,13 @@ exports.updateMerchantStatus = async (req, res) => {
   }
 };
 
-
-//EDIT PROFILE
-exports.updateMerchantProfile = async (req, res) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ message: 'Token faltante' });
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id);
-    if (!user || user.role !== 'comerciante') {
-      return res.status(403).json({ message: 'No autorizado' });
-    }
-
-    const { name, email, phone, avatar, business } = req.body;
-
-    if (name) user.name = name;
-    if (email) user.email = email;
-    if (phone) user.phone = phone;
-    if (avatar) user.avatar = avatar;
-    
-    if (!user.business) user.business = {};
-    if (!user.business.schedule) user.business.schedule = {};
-
-
-    if (business?.address) user.business.address = business.address;
-    if (business?.socials) user.business.socials = business.socials;
-    if (business?.schedule?.opening) user.business.schedule.opening = business.schedule.opening;
-    if (business?.schedule?.closing) user.business.schedule.closing = business.schedule.closing;
-
-    await user.save();
-
-    return res.status(200).json({ message: 'Perfil actualizado correctamente' });
-  } catch (error) {
-    console.error('❌ Error en updateMerchantProfile:', error);
-    return res.status(500).json({ message: 'Error interno al actualizar perfil' });
-  }
+module.exports = {
+  registerMerchant,
+  loginMerchant,
+  verifyMerchantEmail,
+  createMerchantProfile,
+  updateMerchantProfile,
+  getAllMerchants,
+  updateMerchantStatus,
+  getMerchantsByCategory, 
 };

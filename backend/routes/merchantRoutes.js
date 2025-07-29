@@ -11,6 +11,7 @@ const {
   updateMerchantProfile,
   getAllMerchants,
   updateMerchantStatus,
+  getMerchantsByCategory, 
 } = merchantController;
 
 // Registro y autenticación
@@ -22,7 +23,9 @@ router.post('/verify-email-register', verifyMerchantEmail);
 router.post('/profile', verifyToken, createMerchantProfile);  
 router.put('/profile', verifyToken, updateMerchantProfile);  
 
-// Admin
+// Admin y categorías
 router.get('/', getAllMerchants);                            
-router.put('/status/:id', updateMerchantStatus);              
+router.put('/status/:id', updateMerchantStatus);             
+router.get('/category', getMerchantsByCategory); 
+
 module.exports = router;
