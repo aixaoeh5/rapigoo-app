@@ -7,11 +7,10 @@ import {
   Image,
   ActivityIndicator,
   TouchableOpacity,
-  Platform,
 } from 'react-native';
-import axios from 'axios';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
+import { getMerchantsByCategory } from '../api/merchant';
 
 const CategoryScreen = ({ route }) => {
   const { category } = route.params;
@@ -22,17 +21,10 @@ const CategoryScreen = ({ route }) => {
   useEffect(() => {
     const fetchMerchants = async () => {
       try {
-        const BASE_URL =
-          Platform.OS === 'android'
-            ? 'http://10.0.2.2:5000'
-            : 'http://localhost:5000';
-
-        const res = await axios.get(
-          `${BASE_URL}/api/merchant/category?category=${category}`
-        );
-        setMerchants(res.data);
+        const data = await getMerchantsByCategory(category);
+        setMerchants(data);
       } catch (error) {
-        console.error('Error al obtener comerciantes:', error);
+        console.error('❌ Error al obtener comerciantes:', error.message);
       } finally {
         setLoading(false);
       }
@@ -60,12 +52,15 @@ const CategoryScreen = ({ route }) => {
         data={merchants}
         keyExtractor={(item) => item._id}
         renderItem={({ item }) => (
-          <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() =>
+              navigation.navigate('MerchantProfile', { merchantId: item._id })
+            }
+          >
             <Image
               source={{
-                uri:
-                  item.avatar ||
-                  'https://cdn-icons-png.flaticon.com/512/149/149071.png',
+                uri: item.avatar || 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
               }}
               style={styles.avatar}
             />
@@ -81,7 +76,7 @@ const CategoryScreen = ({ route }) => {
                 {item.business?.schedule?.closing || '--'}
               </Text>
             </View>
-          </View>
+          </TouchableOpacity>
         )}
       />
     </View>

@@ -1,71 +1,176 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, Image, TouchableOpacity, StyleSheet } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+} from 'react-native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { getMyServices } from '../api/serviceApi';
+import Icon from 'react-native-vector-icons/Ionicons';
+import { getStatusBarHeight } from 'react-native-status-bar-height';
 
 const ServicesScreen = () => {
-    const navigation = useNavigation();
-    const [services, setServices] = useState([]);
+  const navigation = useNavigation();
+  const [services, setServices] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const statusBarHeight = getStatusBarHeight();
 
-    useEffect(() => {
-        const loadServices = async () => {
-            const savedServices = await AsyncStorage.getItem('services');
-            if (savedServices) {
-                setServices(JSON.parse(savedServices));
-            }
-        };
-        loadServices();
-    }, []);
+  const loadServices = async () => {
+    setLoading(true);
+    try {
+      const data = await getMyServices();
+      setServices(data);
+    } catch (error) {
+      Alert.alert('Error', error.message || 'No se pudieron cargar los servicios');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return (
-        <View style={styles.container}>
-            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-                <Text style={styles.backButtonText}>{'<'}</Text>
-            </TouchableOpacity>
-            
-            <Text style={styles.header}>Tus Servicios</Text>
-            
-            <TouchableOpacity 
-                style={styles.addButton} 
-                onPress={() => navigation.navigate('AddService')}
-            >
-                <Text style={styles.addButtonText}>+ Agregar nuevo servicio</Text>
-            </TouchableOpacity>
+  useFocusEffect(
+    useCallback(() => {
+      loadServices();
+    }, [])
+  );
 
-            <FlatList
-                data={services}
-                keyExtractor={(item, index) => index.toString()}
-                renderItem={({ item }) => (
-                    <TouchableOpacity 
-                        style={styles.serviceItem} 
-                        onPress={() => navigation.navigate('AddService', { service: item })}
-                    >
-                        <Image source={{ uri: item.image }} style={styles.serviceImage} />
-                        <View style={styles.serviceDetails}>
-                            <Text style={styles.serviceTitle}>{item.title}</Text>
-                            <Text style={styles.serviceDescription}>{item.description}</Text>
-                            <Text style={styles.servicePrice}>${item.price}</Text>
-                        </View>
-                    </TouchableOpacity>
-                )}
-            />
+  const renderItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.card}
+      onPress={() => navigation.navigate('AddService', { service: item })}
+    >
+      <Image
+        source={{ uri: item.image }}
+        style={styles.image}
+        resizeMode="cover"
+      />
+      <View style={styles.info}>
+        <Text style={styles.title}>{item.title}</Text>
+        <Text style={styles.price}>${item.price.toFixed(2)}</Text>
+      </View>
+      <Icon
+        name="create-outline"
+        size={22}
+        color="black"
+        style={styles.editIcon}
+      />
+    </TouchableOpacity>
+  );
+
+  return (
+    <View style={[styles.container, { paddingTop: statusBarHeight }]}>
+      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+        <Icon name="chevron-back" size={26} color="black" />
+      </TouchableOpacity>
+
+      <Text style={styles.headerTitle}>Tus Servicios</Text>
+
+      <TouchableOpacity
+        style={styles.addButtonLoginStyle}
+        onPress={() => navigation.navigate('AddService')}
+      >
+        <Text style={styles.addButtonLoginText}>Agregar nuevo servicio</Text>
+      </TouchableOpacity>
+
+      {loading ? (
+        <ActivityIndicator size="large" style={styles.loader} />
+      ) : services.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>No tienes servicios aún.</Text>
         </View>
-    );
+      ) : (
+        <FlatList
+          data={services}
+          keyExtractor={item => item._id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.list}
+        />
+      )}
+    </View>
+  );
 };
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff', padding: 20 },
-    backButton: { marginBottom: 10, top: 57, left: 20, position: 'absolute' },
-    backButtonText: { fontSize: 24, fontWeight: 'bold' },
-    header: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, textAlign: 'center', marginTop: 40 },
-    addButton: { backgroundColor: '#000', padding: 15, borderRadius: 10, alignItems: 'center', marginBottom: 20 },
-    addButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-    serviceItem: { flexDirection: 'row', padding: 15, borderBottomWidth: 1, borderBottomColor: '#ddd' },
-    serviceImage: { width: 60, height: 60, borderRadius: 10, marginRight: 15 },
-    serviceDetails: { flex: 1 },
-    serviceTitle: { fontSize: 18, fontWeight: 'bold' },
-    serviceDescription: { fontSize: 14, color: '#777' },
-    servicePrice: { fontSize: 16, fontWeight: 'bold', marginTop: 5 },
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 75,
+    left: 20,
+    zIndex: 10,
+    padding: 10,
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginTop: 60,
+    marginBottom: 24,
+  },
+  addButtonLoginStyle: {
+    backgroundColor: 'black',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    alignSelf: 'center',
+    width: '80%',
+    marginBottom: 20,
+  },
+  addButtonLoginText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  loader: {
+    marginTop: 20,
+  },
+  list: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  image: {
+    width: 80,
+    height: 80,
+  },
+  info: {
+    flex: 1,
+    paddingHorizontal: 12,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '500',
+  },
+  price: {
+    marginTop: 4,
+    fontSize: 16,
+    color: '#666',
+  },
+  editIcon: {
+    paddingHorizontal: 12,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#999',
+  },
 });
 
 export default ServicesScreen;

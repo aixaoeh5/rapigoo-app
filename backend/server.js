@@ -19,8 +19,8 @@ mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => console.log('✅ Conectado a MongoDB'))
-.catch((err) => console.error('❌ Error al conectar a MongoDB:', err));
+  .then(() => console.log('✅ Conectado a MongoDB'))
+  .catch((err) => console.error('❌ Error al conectar a MongoDB:', err));
 
 // Rutas de autenticación para usuarios normales
 const authRoutes = require('./routes/authRoutes');
@@ -30,9 +30,13 @@ app.use('/api/auth', authRoutes);
 const merchantRoutes = require('./routes/merchantRoutes');
 app.use('/api/merchant', merchantRoutes);
 
+// Rutas para servicios de comerciantes
+const serviceRoutes = require('./routes/services');
+app.use('/api/services', serviceRoutes);
+
 // Ruta de prueba
 app.get('/', (req, res) => {
-  res.send('Backend funcionando correctamente 🔥');
+  res.send('Backend funcionando correctamente ');
 });
 
 // Iniciar servidor

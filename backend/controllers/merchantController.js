@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const Service = require('../models/Service');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
@@ -104,7 +105,7 @@ const verifyMerchantEmail = async (req, res) => {
 
     await user.save();
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
     res.status(200).json({
       token,
@@ -136,7 +137,7 @@ const loginMerchant = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ message: 'Contraseña incorrecta' });
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
     res.status(200).json({
       token,
@@ -313,6 +314,43 @@ const getAllMerchantsForAdmin = async (req, res) => {
 };
 
 
+//Perfil publico comerciante
+const getPublicMerchantProfile = async (req, res) => {
+  try {
+    const { merchantId } = req.params;
+
+    const user = await User.findById(merchantId);
+    if (
+      !user ||
+      user.role !== 'comerciante' ||
+      !user.isVerified ||
+      user.merchantStatus !== 'aprobado'
+    ) {
+      return res.status(404).json({ success: false, message: 'Comerciante no encontrado o no aprobado' });
+    }
+
+    const services = await Service.find({ merchantId }).sort({ createdAt: -1 });
+
+    return res.json({
+      success: true,
+      data: {
+        merchant: {
+          name: user.name,
+          email: user.email,
+          avatar: user.avatar,
+          phone: user.phone,
+          business: user.business,
+        },
+        services
+      }
+    });
+  } catch (error) {
+    console.error('Error al obtener perfil público:', error);
+    return res.status(500).json({ success: false, message: 'Error interno del servidor' });
+  }
+};
+
+
 module.exports = {
   registerMerchant,
   loginMerchant,
@@ -323,4 +361,5 @@ module.exports = {
   updateMerchantStatus,
   getMerchantsByCategory, 
   getAllMerchantsForAdmin,
+  getPublicMerchantProfile,
 };

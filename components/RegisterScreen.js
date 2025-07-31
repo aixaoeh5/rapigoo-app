@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  TouchableOpacity,
+  Alert,
+  Linking,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { getStatusBarHeight } from 'react-native-status-bar-height';
@@ -13,18 +21,18 @@ const RegisterScreen = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isAccepted, setIsAccepted] = useState(false);
   const statusBarHeight = getStatusBarHeight();
 
   const handleRegister = async () => {
-try {
-  const data = await registerUser({ name, email, password });
-  Alert.alert('📩 Código enviado', 'Revisa tu correo para verificar tu cuenta');
-  navigation.navigate('VerifyRegisterCode', { email });
-} catch (error) {
-  console.error('❌ Error al registrar:', error.response?.data?.message || error.message);
-  Alert.alert('Error', error.response?.data?.message || 'No se pudo registrar');
-}
-
+    try {
+      const data = await registerUser({ name, email, password });
+      Alert.alert('📩 Código enviado', 'Revisa tu correo para verificar tu cuenta');
+      navigation.navigate('VerifyRegisterCode', { email });
+    } catch (error) {
+      console.error('❌ Error al registrar:', error.response?.data?.message || error.message);
+      Alert.alert('Error', error.response?.data?.message || 'No se pudo registrar');
+    }
   };
 
   return (
@@ -66,7 +74,34 @@ try {
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={styles.button} onPress={handleRegister}>
+      <TouchableOpacity
+        style={styles.termsContainer}
+        onPress={() => setIsAccepted(!isAccepted)}
+      >
+        <View style={[styles.checkbox, isAccepted && styles.checked]} />
+        <Text style={styles.termsText}>
+          He leído y acepto los{' '}
+          <Text
+            style={styles.link}
+            onPress={() => Linking.openURL('https://rapigoo.com/terminos')}
+          >
+            Términos de uso
+          </Text>{' '}
+          y la{' '}
+          <Text
+            style={styles.link}
+            onPress={() => Linking.openURL('https://rapigoo.com/privacidad')}
+          >
+            Política de privacidad
+          </Text>
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.button, !isAccepted && { opacity: 0.5 }]}
+        onPress={handleRegister}
+        disabled={!isAccepted}
+      >
         <Text style={styles.buttonText}>Registrarse</Text>
       </TouchableOpacity>
 
@@ -131,6 +166,31 @@ const styles = StyleSheet.create({
   },
   passwordIcon: {
     padding: 10,
+  },
+  termsContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 20,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 1,
+    borderColor: '#aaa',
+    marginRight: 10,
+    marginTop: 3,
+  },
+  checked: {
+    backgroundColor: '#333',
+  },
+  termsText: {
+    flex: 1,
+    color: '#333',
+    fontSize: 13,
+  },
+  link: {
+    color: '#007BFF',
+    textDecorationLine: 'underline',
   },
   button: {
     backgroundColor: 'black',

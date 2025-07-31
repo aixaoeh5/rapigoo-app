@@ -1,121 +1,201 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, Button, Image, Alert, StyleSheet, TouchableOpacity } from 'react-native';
-import { Picker } from '@react-native-picker/picker'; // Importamos Picker
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  Alert,
+  ScrollView,
+} from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import Icon from 'react-native-vector-icons/Ionicons';
+import { getStatusBarHeight } from 'react-native-status-bar-height';
+import { createOrUpdateService } from '../api/serviceApi';
 
-const AddServiceScreen = ({ route, navigation }) => {
-    const serviceToEdit = route.params?.service || null;
+const AddServiceScreen = () => {
+  const navigation = useNavigation();
+  const route = useRoute();
+  const statusBarHeight = getStatusBarHeight();
 
-    const [image, setImage] = useState(serviceToEdit?.image || '');
-    const [title, setTitle] = useState(serviceToEdit?.title || '');
-    const [price, setPrice] = useState(serviceToEdit?.price || '');
-    const [category, setCategory] = useState(serviceToEdit?.category || 'Restaurante'); // Categoría por defecto
-    const [description, setDescription] = useState(serviceToEdit?.description || '');
+  const editing = !!route.params?.service;
 
-    useEffect(() => {
-        if (serviceToEdit) {
-            setImage(serviceToEdit.image);
-            setTitle(serviceToEdit.title);
-            setPrice(serviceToEdit.price);
-            setCategory(serviceToEdit.category);
-            setDescription(serviceToEdit.description);
-        }
-    }, [serviceToEdit]);
+  const [image, setImage] = useState('');
+  const [title, setTitle] = useState('');
+  const [price, setPrice] = useState('');
+  const [category, setCategory] = useState('');
+  const [description, setDescription] = useState('');
 
-    const pickImage = async () => {
-        let result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.All,
-            allowsEditing: true,
-            aspect: [4, 3],
-            quality: 1,
-        });
+  useEffect(() => {
+    if (editing) {
+      const { service } = route.params;
+      setImage(service.image);
+      setTitle(service.title);
+      setPrice(service.price.toString());
+      setCategory(service.category);
+      setDescription(service.description);
+    }
+  }, [route.params]);
 
-        if (!result.canceled) {
-            setImage(result.assets[0].uri);
-        }
-    };
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+    });
 
-    const saveService = async () => {
-        if (!title || !price || !category || !description || !image) {
-            Alert.alert('Error', 'Por favor, completa todos los campos.');
-            return;
-        }
+    if (!result.canceled) {
+      setImage(result.assets[0].uri);
+    }
+  };
 
-        try {
-            const storedServices = await AsyncStorage.getItem('services');
-            let servicesArray = storedServices ? JSON.parse(storedServices) : [];
+  const handleSave = async () => {
+    if (!image || !title || !price || !category || !description) {
+      return Alert.alert('Campos incompletos', 'Todos los campos son obligatorios.');
+    }
 
-            if (serviceToEdit) {
-                
-                const index = servicesArray.findIndex(s => s.id === serviceToEdit.id);
-                if (index !== -1) {
-                    servicesArray[index] = { ...servicesArray[index], image, title, price, category, description };
-                }
-            } else {
-                
-                servicesArray.push({ id: Date.now(), image, title, price, category, description });
-            }
+    try {
+      await createOrUpdateService({
+        id: editing ? route.params.service._id : undefined,
+        image,
+        title,
+        price: parseFloat(price),
+        category,
+        description,
+      });
 
-            await AsyncStorage.setItem('services', JSON.stringify(servicesArray));
-            navigation.goBack();
-        } catch (error) {
-            console.error('Error al guardar el servicio:', error);
-        }
-    };
+      Alert.alert('Éxito', editing ? 'Servicio actualizado' : 'Servicio creado');
+      navigation.goBack();
+    } catch (error) {
+      Alert.alert('Error', error.message || 'No se pudo guardar el servicio');
+    }
+  };
 
-    return (
-        <View style={styles.container}>
-            {}
-            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-                <Text style={styles.backButtonText}>{'<'}</Text>
-            </TouchableOpacity>
+  return (
+    <ScrollView contentContainerStyle={[styles.container, { paddingTop: statusBarHeight + 10 }]}>
+      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+        <Icon name="chevron-back" size={26} color="black" />
+      </TouchableOpacity>
 
-            <Text style={styles.header}>{serviceToEdit ? 'Editar servicio' : 'Agregar nuevo servicio'}</Text>
+      <Text style={styles.title}>
+        {editing ? 'Editar Servicio' : 'Agregar Servicio'}
+      </Text>
 
-            <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
-                {image ? <Image source={{ uri: image }} style={styles.imagePreview} /> : <Text>+ Agregar foto</Text>}
-            </TouchableOpacity>
+      <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
+        {image ? (
+          <Image source={{ uri: image }} style={styles.image} />
+        ) : (
+          <Text style={styles.imagePlaceholder}>Seleccionar imagen</Text>
+        )}
+      </TouchableOpacity>
 
-            <TextInput style={styles.input} placeholder="Título del servicio" value={title} onChangeText={setTitle} />
-            <TextInput style={styles.input} placeholder="Precio" keyboardType="numeric" value={price} onChangeText={setPrice} />
+      <Text style={styles.label}>Título</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Ej: Corte de cabello"
+        value={title}
+        onChangeText={setTitle}
+      />
 
-            {}
-            <Picker
-                selectedValue={category}
-                onValueChange={(itemValue) => setCategory(itemValue)}
-                style={styles.picker}
-            >
-                <Picker.Item label="Restaurante" value="Restaurante" />
-                <Picker.Item label="Postres" value="Postres" />
-                <Picker.Item label="Masajes" value="Masajes" />
-                <Picker.Item label="Limpieza" value="Limpieza" />
-                <Picker.Item label="Farmacia" value="Farmacia" />
-                <Picker.Item label="Belleza" value="Belleza" />
-            </Picker>
+      <Text style={styles.label}>Precio (DOP)</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Ej: 15.00"
+        keyboardType="numeric"
+        value={price}
+        onChangeText={setPrice}
+      />
 
-            <TextInput style={styles.input} placeholder="Descripción" value={description} onChangeText={setDescription} multiline />
+      <Text style={styles.label}>Categoría</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Ej: Peluquería"
+        value={category}
+        onChangeText={setCategory}
+      />
 
-            <TouchableOpacity style={styles.saveButton} onPress={saveService}>
-                <Text style={styles.saveButtonText}>{serviceToEdit ? 'Actualizar servicio' : 'Guardar servicio'}</Text>
-            </TouchableOpacity>
-        </View>
-    );
+      <Text style={styles.label}>Descripción</Text>
+      <TextInput
+        style={[styles.input, styles.textArea]}
+        placeholder="Describe tu servicio"
+        multiline
+        numberOfLines={4}
+        value={description}
+        onChangeText={setDescription}
+      />
+
+      <TouchableOpacity style={styles.button} onPress={handleSave}>
+        <Text style={styles.buttonText}>Guardar servicio</Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
 };
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff', padding: 20 },
-    backButton: { position: 'absolute', top: 30, left: 20, zIndex: 10 },
-    backButtonText: { fontSize: 24, fontWeight: 'bold' },
-    header: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, top: 10, textAlign: 'center' },
-    imagePicker: { width: '100%', height: 150, backgroundColor: '#ddd', justifyContent: 'center', alignItems: 'center', borderRadius: 10, marginBottom: 20 },
-    imagePreview: { width: '100%', height: '100%', borderRadius: 10 },
-    input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 10, padding: 10, fontSize: 16, marginBottom: 15 },
-    picker: { borderWidth: 1, borderColor: '#ccc', borderRadius: 10, marginBottom: 15, backgroundColor: '#f5f5f5' },
-    saveButton: { backgroundColor: '#000', padding: 15, borderRadius: 10, alignItems: 'center' },
-    saveButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  container: {
+    backgroundColor: 'white',
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+  },
+  backButton: {
+    position: 'absolute',
+    top: 75,
+    left: 10,
+    padding: 10,
+    zIndex: 10,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginTop: 50,
+    marginBottom: 20,
+    alignSelf: 'center',
+  },
+  imagePicker: {
+    backgroundColor: '#f0f0f0',
+    height: 180,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+    overflow: 'hidden',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+  },
+  imagePlaceholder: {
+    color: '#888',
+  },
+  label: {
+    marginBottom: 5,
+    marginLeft: 10,
+    fontSize: 14,
+    color: '#333',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 16,
+  },
+  textArea: {
+    textAlignVertical: 'top',
+  },
+  button: {
+    backgroundColor: 'black',
+    padding: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  buttonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
 });
 
 export default AddServiceScreen;
-
-

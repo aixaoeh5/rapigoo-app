@@ -35,6 +35,7 @@ import MerchantPendingApprovalScreen from './components/MerchantPendingApprovalS
 import ProfileMerchantScreen from './components/ProfileMerchantScreen';
 import EditMerchantProfileScreen from './components/EditMerchantProfileScreen';
 import CategoryScreen from './components/CategoryScreen';
+import MerchantProfileScreen from './components/MerchantProfileScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -75,8 +76,7 @@ export default function App() {
         <Stack.Screen name="ProfileMerchant" component={ProfileMerchantScreen} />
         <Stack.Screen name="EditMerchantProfile" component={EditMerchantProfileScreen} />
         <Stack.Screen name="Category" component={CategoryScreen} />
-
-
+        <Stack.Screen name="MerchantProfile" component={MerchantProfileScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

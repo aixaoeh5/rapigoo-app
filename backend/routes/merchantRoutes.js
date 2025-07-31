@@ -12,24 +12,28 @@ const {
   getAllMerchants,
   updateMerchantStatus,
   getMerchantsByCategory,
-  getAllMerchantsForAdmin, 
+  getAllMerchantsForAdmin,
+  getPublicMerchantProfile, 
 } = merchantController;
 
-// ✅ Registro y autenticación
-router.post('/register', registerMerchant);                    
-router.post('/login', loginMerchant);                         
-router.post('/verify-email-register', verifyMerchantEmail);    
+// Registro y autenticación
+router.post('/register', registerMerchant);
+router.post('/login', loginMerchant);
+router.post('/verify-email-register', verifyMerchantEmail);
 
-// ✅ Perfil del comerciante
-router.post('/profile', verifyToken, createMerchantProfile);   
-router.put('/profile', verifyToken, updateMerchantProfile);    
+// Perfil del comerciante
+router.post('/profile', verifyToken, createMerchantProfile);
+router.put('/profile', verifyToken, updateMerchantProfile);
 
-// ✅ Categorías y filtrado
-router.get('/category', getMerchantsByCategory);              
-router.get('/', getAllMerchants);                              
+// Categorías y filtrado
+router.get('/category', getMerchantsByCategory);
+router.get('/', getAllMerchants);
 
-// ✅ Admin
-router.get('/all', getAllMerchantsForAdmin);                 
-router.put('/status/:id', updateMerchantStatus);              
+// Admin
+router.get('/all', getAllMerchantsForAdmin);
+router.put('/status/:id', updateMerchantStatus);
+
+// Perfil público para consumidores
+router.get('/public/:merchantId', getPublicMerchantProfile); 
 
 module.exports = router;
