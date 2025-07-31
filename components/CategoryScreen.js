@@ -11,17 +11,21 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { getMerchantsByCategory } from '../api/merchant';
+import { getStatusBarHeight } from 'react-native-status-bar-height';
 
 const CategoryScreen = ({ route }) => {
   const { category } = route.params;
   const [merchants, setMerchants] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigation = useNavigation();
+  const statusBarHeight = getStatusBarHeight();
 
   useEffect(() => {
     const fetchMerchants = async () => {
       try {
+        console.log('🔎 Obteniendo comerciantes por categoría:', category);
         const data = await getMerchantsByCategory(category);
+        console.log('✅ Comerciantes recibidos:', data);
         setMerchants(data);
       } catch (error) {
         console.error('❌ Error al obtener comerciantes:', error.message);
@@ -34,37 +38,42 @@ const CategoryScreen = ({ route }) => {
   }, [category]);
 
   if (loading) {
-    return <ActivityIndicator style={{ flex: 1 }} size="large" color="#000" />;
+    return (
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color="#000" />
+      </View>
+    );
+  }
+
+  if (merchants.length === 0) {
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyText}>No hay comerciantes en esta categoría</Text>
+      </View>
+    );
   }
 
   return (
     <View style={styles.container}>
-      {/* Encabezado */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Icon name="chevron-back" size={24} color="#000" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{category}</Text>
-      </View>
+      <TouchableOpacity style={[styles.backButton, { top: statusBarHeight + 10 }]} onPress={() => navigation.goBack()}>
+        <Icon name="chevron-back" size={26} color="black" />
+      </TouchableOpacity>
 
-      {/* Lista de comerciantes */}
+      <Text style={styles.title}>{category.toUpperCase()}</Text>
+
       <FlatList
         data={merchants}
         keyExtractor={(item) => item._id}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.card}
-            onPress={() =>
-              navigation.navigate('MerchantProfile', { merchantId: item._id })
-            }
+            onPress={() => navigation.navigate('MerchantProfile', { merchantId: item._id })}
           >
             <Image
-              source={{
-                uri: item.avatar || 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
-              }}
+              source={{ uri: item.avatar || 'https://cdn-icons-png.flaticon.com/512/149/149071.png' }}
               style={styles.avatar}
             />
-            <View style={styles.info}>
+            <View>
               <Text style={styles.name}>
                 {item.business?.businessName || item.name}
               </Text>
@@ -72,10 +81,10 @@ const CategoryScreen = ({ route }) => {
                 {item.business?.address || 'Dirección no disponible'}
               </Text>
               <Text style={styles.schedule}>
-                {item.business?.schedule?.opening || '--'} a{' '}
-                {item.business?.schedule?.closing || '--'}
+                Horario: {item.business?.schedule?.opening || '--'} - {item.business?.schedule?.closing || '--'}
               </Text>
             </View>
+            <Icon name="chevron-forward" size={20} color="#888" style={{ marginLeft: 'auto' }} />
           </TouchableOpacity>
         )}
       />
@@ -83,60 +92,69 @@ const CategoryScreen = ({ route }) => {
   );
 };
 
-export default CategoryScreen;
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    paddingTop: 20,
     paddingHorizontal: 16,
-    paddingTop: 40,
+    backgroundColor: '#fff',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-    position: 'relative',
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginTop: 20,
+    marginBottom: 16,
+    alignSelf: 'center',
   },
   backButton: {
     position: 'absolute',
-    left: 0,
+    left: 10,
+    zIndex: 10,
     padding: 8,
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    textAlign: 'center',
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#555',
   },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    padding: 12,
+    marginBottom: 12,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 12,
+    elevation: 2,
   },
   avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     marginRight: 12,
-  },
-  info: {
-    flex: 1,
   },
   name: {
     fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 2,
+    fontWeight: '600',
   },
   address: {
     fontSize: 14,
-    color: '#555',
-    marginBottom: 1,
+    color: '#777',
+    marginTop: 2,
   },
   schedule: {
     fontSize: 13,
-    color: '#888',
+    color: '#555',
+    marginTop: 1,
   },
 });
+
+export default CategoryScreen;

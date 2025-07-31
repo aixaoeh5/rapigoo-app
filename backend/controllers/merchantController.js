@@ -260,7 +260,7 @@ const getMerchantsByCategory = async (req, res) => {
     const { category } = req.query;
 
     if (!category) {
-      return res.status(400).json({ message: 'Categoría no especificada' });
+      return res.status(400).json({ success: false, message: 'Categoría no especificada' });
     }
 
     const merchants = await User.find({
@@ -270,12 +270,13 @@ const getMerchantsByCategory = async (req, res) => {
       merchantStatus: 'aprobado',
     });
 
-    res.json(merchants);
+    res.json({ success: true, data: merchants });
   } catch (error) {
     console.error('Error al filtrar comerciantes por categoría:', error);
-    res.status(500).json({ message: 'Error interno del servidor' });
+    res.status(500).json({ success: false, message: 'Error interno del servidor' });
   }
 };
+
 
 // ACTUALIZAR ESTADO DE APROBACIÓN
 const updateMerchantStatus = async (req, res) => {

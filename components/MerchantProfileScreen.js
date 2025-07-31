@@ -5,10 +5,9 @@ import {
   StyleSheet,
   Image,
   ActivityIndicator,
-  ScrollView,
+  FlatList,
   Alert,
   TouchableOpacity,
-  FlatList,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -42,32 +41,50 @@ const MerchantProfileScreen = () => {
 
   const renderServiceItem = ({ item }) => (
     <View style={styles.serviceCard}>
-      <Text style={styles.serviceName}>{item.name}</Text>
-      <Text style={styles.servicePrice}>${item.price}</Text>
+      <Image
+        source={{ uri: item.image || 'https://cdn-icons-png.flaticon.com/512/3075/3075977.png' }}
+        style={styles.serviceImage}
+      />
+      <View style={styles.serviceInfo}>
+        <Text style={styles.serviceTitle}>{item.title}</Text>
+        <Text style={styles.serviceDescription}>
+          {item.description || 'Sin descripción'}
+        </Text>
+        <Text style={styles.servicePrice}>DOP ${item.price}</Text>
+      </View>
+      <Icon name="checkmark-circle" size={20} color="green" />
     </View>
   );
 
-  const renderGroupedServices = () => {
-    const grouped = services.reduce((acc, service) => {
-      const cat = service.category || 'Otros';
-      if (!acc[cat]) acc[cat] = [];
-      acc[cat].push(service);
-      return acc;
-    }, {});
+  const renderHeader = () => (
+    <View style={styles.headerContainer}>
+      <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+        <Icon name="chevron-back" size={26} color="#000" />
+      </TouchableOpacity>
 
-    return Object.entries(grouped).map(([category, items]) => (
-      <View key={category} style={styles.serviceSection}>
-        <Text style={styles.sectionTitle}>{category}</Text>
-        <FlatList
-          data={items}
-          horizontal
-          keyExtractor={(item) => item._id}
-          renderItem={renderServiceItem}
-          showsHorizontalScrollIndicator={false}
-        />
-      </View>
-    ));
-  };
+      <Image
+        source={{
+          uri: merchant?.avatar || 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
+        }}
+        style={styles.avatar}
+      />
+      <Text style={styles.businessName}>
+        {merchant?.business?.businessName || merchant?.name}
+      </Text>
+      <Text style={styles.description}>
+        {merchant?.business?.description || 'Sin descripción del negocio'}
+      </Text>
+      <Text style={styles.infoText}>
+        🕒 {merchant?.business?.schedule?.opening || '--'} -{' '}
+        {merchant?.business?.schedule?.closing || '--'}
+      </Text>
+      <Text style={styles.infoText}>
+        📍 {merchant?.business?.address || 'Dirección no disponible'}
+      </Text>
+
+      <Text style={styles.sectionTitle}>SERVICIOS</Text>
+    </View>
+  );
 
   if (loading) {
     return <ActivityIndicator style={{ flex: 1 }} size="large" color="#000" />;
@@ -82,38 +99,14 @@ const MerchantProfileScreen = () => {
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Icon name="chevron-back" size={26} color="#000" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>
-          {merchant.business?.businessName || merchant.name}
-        </Text>
-      </View>
-
-      <View style={styles.profileSection}>
-        <Image
-          source={{
-            uri: merchant.avatar || 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
-          }}
-          style={styles.avatar}
-        />
-        <Text style={styles.name}>{merchant.business?.businessName || merchant.name}</Text>
-        <Text style={styles.address}>📍 {merchant.business?.address || 'Dirección no disponible'}</Text>
-        <Text style={styles.schedule}>
-          🕒 {merchant.business?.schedule?.opening || '--'} - {merchant.business?.schedule?.closing || '--'}
-        </Text>
-        <Text style={styles.description}>
-          {merchant.business?.description || 'Sin descripción disponible.'}
-        </Text>
-      </View>
-
-      <View style={styles.servicesSection}>
-        <Text style={styles.servicesTitle}>Servicios</Text>
-        {renderGroupedServices()}
-      </View>
-    </ScrollView>
+    <FlatList
+      data={services}
+      keyExtractor={(item) => item._id}
+      renderItem={renderServiceItem}
+      ListHeaderComponent={renderHeader}
+      contentContainerStyle={styles.container}
+      showsVerticalScrollIndicator={false}
+    />
   );
 };
 
@@ -121,84 +114,77 @@ export default MerchantProfileScreen;
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    paddingBottom: 40,
     backgroundColor: '#fff',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  backButton: {
-    marginRight: 10,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  profileSection: {
+  headerContainer: {
     alignItems: 'center',
     padding: 20,
   },
+  backButton: {
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+    top: 50,
+  },
   avatar: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     marginBottom: 10,
   },
-  name: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  address: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
-  },
-  schedule: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
+  businessName: {
+    fontSize: 20,
+    fontWeight: 'bold',
   },
   description: {
     fontSize: 14,
-    color: '#444',
-    marginTop: 10,
+    color: '#555',
     textAlign: 'center',
-    paddingHorizontal: 20,
+    marginTop: 6,
+    marginBottom: 4,
   },
-  servicesSection: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
-  },
-  servicesTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  serviceSection: {
-    marginBottom: 20,
+  infoText: {
+    fontSize: 13,
+    color: '#444',
+    marginTop: 2,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 6,
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 20,
+    alignSelf: 'flex-start',
   },
   serviceCard: {
-    backgroundColor: '#f8f8f8',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f6f6f6',
+    marginHorizontal: 16,
+    marginVertical: 8,
     padding: 12,
-    borderRadius: 8,
-    marginRight: 10,
+    borderRadius: 12,
+    elevation: 2,
   },
-  serviceName: {
-    fontSize: 14,
-    fontWeight: '500',
+  serviceImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  serviceInfo: {
+    flex: 1,
+  },
+  serviceTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  serviceDescription: {
+    fontSize: 13,
+    color: '#777',
+    marginVertical: 2,
   },
   servicePrice: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 13,
+    color: '#000',
   },
   centered: {
     flex: 1,

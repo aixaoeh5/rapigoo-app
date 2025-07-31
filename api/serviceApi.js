@@ -67,7 +67,7 @@ export async function getMerchantPublicProfile(merchantId) {
   try {
     const { data } = await apiClient.get(`/merchant/public/${merchantId}`);
     if (!data.success) throw new Error(data.message);
-    return data.data; // ← contiene { merchant, services }
+    return data.data; 
   } catch (err) {
     const msg = err.response?.data?.message || err.message;
     console.error('❌ getMerchantPublicProfile:', msg);

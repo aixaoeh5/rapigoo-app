@@ -55,6 +55,12 @@ const AddServiceScreen = () => {
       return Alert.alert('Campos incompletos', 'Todos los campos son obligatorios.');
     }
 
+    // Validación: solo números y punto decimal (no letras ni símbolos)
+    const priceRegex = /^[0-9]+(\.[0-9]{1,2})?$/;
+    if (!priceRegex.test(price)) {
+      return Alert.alert('Precio inválido', 'El precio no debe contener letras ni símbolos.');
+    }
+
     try {
       await createOrUpdateService({
         id: editing ? route.params.service._id : undefined,
@@ -68,7 +74,19 @@ const AddServiceScreen = () => {
       Alert.alert('Éxito', editing ? 'Servicio actualizado' : 'Servicio creado');
       navigation.goBack();
     } catch (error) {
-      Alert.alert('Error', error.message || 'No se pudo guardar el servicio');
+      let msg = error.message;
+
+      if (msg.includes('"description"') && msg.includes('length')) {
+        msg = 'La descripción debe tener al menos 10 caracteres.';
+      } else if (msg.includes('"title"') && msg.includes('empty')) {
+        msg = 'El título no puede estar vacío.';
+      } else if (msg.includes('"price"') && msg.includes('must be a number')) {
+        msg = 'El precio debe ser un número válido.';
+      } else if (msg.includes('"image"') && msg.includes('required')) {
+        msg = 'Debes seleccionar una imagen para el servicio.';
+      }
+
+      Alert.alert('Error', msg || 'No se pudo guardar el servicio');
     }
   };
 

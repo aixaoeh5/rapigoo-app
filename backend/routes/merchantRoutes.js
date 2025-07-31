@@ -13,7 +13,7 @@ const {
   updateMerchantStatus,
   getMerchantsByCategory,
   getAllMerchantsForAdmin,
-  getPublicMerchantProfile, 
+  getPublicMerchantProfile,
 } = merchantController;
 
 // Registro y autenticación
@@ -26,7 +26,7 @@ router.post('/profile', verifyToken, createMerchantProfile);
 router.put('/profile', verifyToken, updateMerchantProfile);
 
 // Categorías y filtrado
-router.get('/category', getMerchantsByCategory);
+router.get('/category', getMerchantsByCategory); 
 router.get('/', getAllMerchants);
 
 // Admin
@@ -34,6 +34,6 @@ router.get('/all', getAllMerchantsForAdmin);
 router.put('/status/:id', updateMerchantStatus);
 
 // Perfil público para consumidores
-router.get('/public/:merchantId', getPublicMerchantProfile); 
+router.get('/public/:merchantId', getPublicMerchantProfile);
 
 module.exports = router;
