@@ -78,7 +78,11 @@ const CategoryScreen = ({ route }) => {
                 {item.business?.businessName || item.name}
               </Text>
               <Text style={styles.address}>
-                {item.business?.address || 'Dirección no disponible'}
+                {typeof item.business?.address === 'string' 
+                  ? item.business.address 
+                  : item.business?.address?.street 
+                    ? `${item.business.address.street}, ${item.business.address.city}` 
+                    : 'Dirección no disponible'}
               </Text>
               <Text style={styles.schedule}>
                 Horario: {item.business?.schedule?.opening || '--'} - {item.business?.schedule?.closing || '--'}

@@ -12,15 +12,20 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { getMerchantPublicProfile } from '../api/merchant';
+import { useCart } from './context/CartContext';
 
 const MerchantProfileScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { merchantId } = route.params;
+  const { addToCart, loading: cartLoading } = useCart();
 
   const [merchant, setMerchant] = useState(null);
   const [services, setServices] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [addingToCart, setAddingToCart] = useState(null);
 
   useEffect(() => {
     const fetchMerchantProfile = async () => {
@@ -28,6 +33,13 @@ const MerchantProfileScreen = () => {
         const data = await getMerchantPublicProfile(merchantId);
         setMerchant(data.merchant);
         setServices(data.services || []);
+        
+        // Obtener categorías únicas de los servicios
+        const uniqueCategories = [...new Set(data.services.map(s => s.category))].filter(Boolean);
+        setCategories(uniqueCategories);
+        
+        // Por defecto mostrar todos los productos
+        setSelectedCategory(null);
       } catch (err) {
         console.error('❌ Error al cargar perfil público:', err.message);
         Alert.alert('Error', err.message || 'No se pudo cargar el perfil');
@@ -39,20 +51,114 @@ const MerchantProfileScreen = () => {
     fetchMerchantProfile();
   }, [merchantId]);
 
+  const handleAddToCart = async (service) => {
+    setAddingToCart(service._id);
+    
+    try {
+      const result = await addToCart(service._id, 1);
+      
+      if (result.success) {
+        Alert.alert(
+          'Agregado al carrito',
+          result.message,
+          [
+            { text: 'Continuar', style: 'default' },
+            { 
+              text: 'Ver carrito', 
+              style: 'default',
+              onPress: () => navigation.navigate('Cart')
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Error', result.error);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo agregar al carrito');
+    } finally {
+      setAddingToCart(null);
+    }
+  };
+
   const renderServiceItem = ({ item }) => (
     <View style={styles.serviceCard}>
       <Image
-        source={{ uri: item.image || 'https://cdn-icons-png.flaticon.com/512/3075/3075977.png' }}
+        source={{ 
+          uri: (item.images && item.images[0]) || item.image || 'https://cdn-icons-png.flaticon.com/512/3075/3075977.png' 
+        }}
         style={styles.serviceImage}
       />
       <View style={styles.serviceInfo}>
-        <Text style={styles.serviceTitle}>{item.title}</Text>
+        <Text style={styles.serviceTitle}>{item.name || item.title}</Text>
         <Text style={styles.serviceDescription}>
           {item.description || 'Sin descripción'}
         </Text>
         <Text style={styles.servicePrice}>DOP ${item.price}</Text>
+        
+        {item.available ? (
+          <TouchableOpacity 
+            style={[
+              styles.addToCartButton,
+              addingToCart === item._id && styles.addToCartButtonLoading
+            ]}
+            onPress={() => handleAddToCart(item)}
+            disabled={addingToCart === item._id}
+          >
+            {addingToCart === item._id ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Icon name="add" size={16} color="#fff" />
+                <Text style={styles.addToCartText}>Agregar</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : (
+          <Text style={styles.unavailableText}>No disponible</Text>
+        )}
       </View>
-      <Icon name="checkmark-circle" size={20} color="green" />
+    </View>
+  );
+
+  // Filtrar servicios por categoría
+  const filteredServices = selectedCategory 
+    ? services.filter(service => service.category === selectedCategory)
+    : services;
+
+  const renderCategoryFilter = () => (
+    <View style={styles.categoryContainer}>
+      <TouchableOpacity 
+        style={[
+          styles.categoryButton,
+          !selectedCategory && styles.categoryButtonActive
+        ]}
+        onPress={() => setSelectedCategory(null)}
+      >
+        <Text style={[
+          styles.categoryText,
+          !selectedCategory && styles.categoryTextActive
+        ]}>
+          Todos
+        </Text>
+      </TouchableOpacity>
+      
+      {categories.map((category) => (
+        <TouchableOpacity 
+          key={category}
+          style={[
+            styles.categoryButton,
+            selectedCategory === category && styles.categoryButtonActive
+          ]}
+          onPress={() => setSelectedCategory(category)}
+        >
+          <Text style={[
+            styles.categoryText,
+            selectedCategory === category && styles.categoryTextActive
+          ]}>
+            {category}
+          </Text>
+        </TouchableOpacity>
+      ))}
     </View>
   );
 
@@ -79,10 +185,15 @@ const MerchantProfileScreen = () => {
         {merchant?.business?.schedule?.closing || '--'}
       </Text>
       <Text style={styles.infoText}>
-        📍 {merchant?.business?.address || 'Dirección no disponible'}
+        📍 {typeof merchant?.business?.address === 'string' 
+          ? merchant.business.address 
+          : merchant?.business?.address?.street 
+            ? `${merchant.business.address.street}, ${merchant.business.address.city}` 
+            : 'Dirección no disponible'}
       </Text>
 
-      <Text style={styles.sectionTitle}>SERVICIOS</Text>
+      <Text style={styles.sectionTitle}>MENÚ</Text>
+      {renderCategoryFilter()}
     </View>
   );
 
@@ -100,12 +211,19 @@ const MerchantProfileScreen = () => {
 
   return (
     <FlatList
-      data={services}
+      data={filteredServices}
       keyExtractor={(item) => item._id}
       renderItem={renderServiceItem}
       ListHeaderComponent={renderHeader}
       contentContainerStyle={styles.container}
       showsVerticalScrollIndicator={false}
+      ListEmptyComponent={() => (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>
+            No hay productos en esta categoría
+          </Text>
+        </View>
+      )}
     />
   );
 };
@@ -183,12 +301,70 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
   servicePrice: {
-    fontSize: 13,
-    color: '#000',
+    fontSize: 16,
+    color: '#FF6B6B',
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  addToCartButton: {
+    backgroundColor: '#FF6B6B',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+  },
+  addToCartButtonLoading: {
+    backgroundColor: '#FFB3B3',
+  },
+  addToCartText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    marginLeft: 5,
+    fontSize: 14,
+  },
+  unavailableText: {
+    color: '#999',
+    fontStyle: 'italic',
+    fontSize: 14,
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  categoryContainer: {
+    flexDirection: 'row',
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  categoryButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginRight: 10,
+    borderRadius: 20,
+    backgroundColor: '#f0f0f0',
+  },
+  categoryButtonActive: {
+    backgroundColor: '#FF6B6B',
+  },
+  categoryText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  categoryTextActive: {
+    color: '#fff',
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#999',
+    textAlign: 'center',
   },
 });

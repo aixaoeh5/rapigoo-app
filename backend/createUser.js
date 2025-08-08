@@ -13,10 +13,12 @@ useUnifiedTopology: true,
 const hashedPassword = await bcrypt.hash('123456', 10);
 
 const newUser = new User({
-    name: 'Aixa Test',
-    email: 'aixa@test.com',
+    name: 'Carlos Delivery',
+    email: 'carlos.delivery@rapigoo.com',
     password: hashedPassword,
-    role: 'cliente',
+    role: 'delivery',
+    phone: '+1-809-555-0123',
+    isVerified: true
 });
 
 await newUser.save();

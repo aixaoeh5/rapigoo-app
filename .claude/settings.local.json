@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(npm run:*)",
+      "Bash(node:*)",
+      "Bash(npm install:*)",
+      "Bash(npm audit:*)",
+      "Bash(git rm:*)",
+      "Bash(npx expo:*)",
+      "Bash(ipconfig)",
+      "Bash(rm:*)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(npm start)",
+      "Bash(npm start:*)",
+      "Bash(pkill:*)",
+      "Bash(touch:*)",
+      "Bash(npm cache clean:*)",
+      "Bash(curl:*)",
+      "Bash(true)",
+      "Bash(yarn add:*)"
+    ],
+    "deny": []
+  }
+}

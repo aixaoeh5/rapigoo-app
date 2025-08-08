@@ -7,10 +7,19 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "setup": "node scripts/setup-dev.js",
+    "dev": "concurrently \"npm run backend\" \"npm run expo\"",
+    "backend": "cd backend && npm start",
+    "expo": "expo start --clear",
+    "install:all": "npm install && cd backend && npm install && cd ..",
+    "clean": "rm -rf node_modules backend/node_modules && npm run install:all",
+    "test:backend": "cd backend && npm test"
   },
   "dependencies": {
     "@babel/runtime": "^7.26.0",
+    "@craftzdog/react-native-buffer": "^6.1.0",
+    "@expo/metro-runtime": "~5.0.4",
     "@react-native-async-storage/async-storage": "^1.24.0",
     "@react-native-firebase/app": "^22.4.0",
     "@react-native-firebase/auth": "^22.4.0",
@@ -23,6 +32,7 @@
     "expo": "^53.0.0",
     "expo-apple-authentication": "~7.2.4",
     "expo-auth-session": "~6.2.1",
+    "expo-constants": "^17.1.7",
     "expo-facebook": "9.1.0",
     "expo-image-picker": "~16.1.4",
     "expo-location": "~18.1.6",
@@ -32,17 +42,24 @@
     "firebase": "^11.10.0",
     "nodemailer": "^7.0.4",
     "react": "19.0.0",
+    "react-dom": "19.0.0",
     "react-native": "0.79.5",
+    "react-native-crypto": "^2.2.1",
     "react-native-gesture-handler": "~2.24.0",
     "react-native-maps": "1.20.1",
     "react-native-phone-number-input": "^2.1.0",
     "react-native-reanimated": "~3.17.4",
     "react-native-safe-area-context": "5.4.0",
     "react-native-screens": "~4.11.1",
-    "react-native-status-bar-height": "^2.6.0"
+    "react-native-status-bar-height": "^2.6.0",
+    "react-native-web": "^0.20.0",
+    "readable-stream": "^4.7.0",
+    "socket.io-client": "^4.8.1",
+    "timers-browserify": "^2.0.12"
   },
   "devDependencies": {
-    "@babel/core": "^7.26.0"
+    "@babel/core": "^7.26.0",
+    "concurrently": "^9.2.0"
   },
   "private": true
 }

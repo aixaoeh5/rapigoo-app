@@ -1,6 +1,8 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { ThemeProvider } from './components/context/ThemeContext';
+import { CartProvider } from './components/context/CartContext';
 
 import WelcomeScreen from './components/WelcomeScreen';
 import UserTypeScreen from './components/UserTypeScreen';
@@ -36,13 +38,28 @@ import ProfileMerchantScreen from './components/ProfileMerchantScreen';
 import EditMerchantProfileScreen from './components/EditMerchantProfileScreen';
 import CategoryScreen from './components/CategoryScreen';
 import MerchantProfileScreen from './components/MerchantProfileScreen';
+import SecurityScreen from './components/SecurityScreen';
+import ChangePasswordScreen from './components/ChangePasswordScreen';
+import HelpScreen from './components/HelpScreen';
+import FAQScreen from './components/FAQScreen';
+import PaymentMethodsScreen from './components/PaymentMethodsScreen';
+import CartScreen from './components/CartScreen';
+import CheckoutScreen from './components/CheckoutScreen';
+import OrderConfirmationScreen from './components/OrderConfirmationScreen';
+import OrderManagementScreen from './components/OrderManagementScreen';
+import FavoritesScreen from './components/FavoritesScreen';
+import DeliveryNavigationScreen from './components/DeliveryNavigationScreen';
+import OrderTrackingScreen from './components/OrderTrackingScreen';
 
 const Stack = createNativeStackNavigator();
 
 export default function App() {
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <ThemeProvider>
+      <CartProvider>
+        <NavigationContainer>
+        <Stack.Navigator initialRouteName="Startup" screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="Startup" component={StartupScreen} />
         <Stack.Screen name="Welcome" component={WelcomeScreen} />
         <Stack.Screen name="UserType" component={UserTypeScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />
@@ -60,7 +77,6 @@ export default function App() {
         <Stack.Screen name="DeliveryMap" component={DeliveryMapScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
         <Stack.Screen name="Profile" component={ProfileScreen} />
-        <Stack.Screen name="Startup" component={StartupScreen} />
         <Stack.Screen name="EditProfile" component={EditProfileScreen} />
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
         <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
@@ -77,8 +93,22 @@ export default function App() {
         <Stack.Screen name="EditMerchantProfile" component={EditMerchantProfileScreen} />
         <Stack.Screen name="Category" component={CategoryScreen} />
         <Stack.Screen name="MerchantProfile" component={MerchantProfileScreen} />
-      </Stack.Navigator>
-    </NavigationContainer>
+        <Stack.Screen name="Security" component={SecurityScreen} />
+        <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+        <Stack.Screen name="Help" component={HelpScreen} />
+        <Stack.Screen name="FAQ" component={FAQScreen} />
+        <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} />
+        <Stack.Screen name="Cart" component={CartScreen} />
+        <Stack.Screen name="Checkout" component={CheckoutScreen} />
+        <Stack.Screen name="OrderConfirmation" component={OrderConfirmationScreen} />
+        <Stack.Screen name="OrderManagement" component={OrderManagementScreen} />
+        <Stack.Screen name="Favorites" component={FavoritesScreen} />
+        <Stack.Screen name="DeliveryNavigation" component={DeliveryNavigationScreen} />
+        <Stack.Screen name="OrderTracking" component={OrderTrackingScreen} />
+        </Stack.Navigator>
+        </NavigationContainer>
+      </CartProvider>
+    </ThemeProvider>
   );
 }
 

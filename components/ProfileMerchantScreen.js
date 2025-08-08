@@ -13,7 +13,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getStatusBarHeight } from 'react-native-status-bar-height';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
+import apiClient from '../api/apiClient';
 
 const ProfileMerchantScreen = () => {
   const navigation = useNavigation();
@@ -34,9 +34,7 @@ const ProfileMerchantScreen = () => {
         if (!token) return;
 
         try {
-          const res = await axios.get('http://10.0.2.2:5000/api/auth/user', {
-            headers: { Authorization: `Bearer ${token}` },
-          });
+          const res = await apiClient.get('/auth/user');
 
           const data = res.data;
 
@@ -44,7 +42,14 @@ const ProfileMerchantScreen = () => {
           setEmail(data.email);
           setPhone(data.phone || '');
           setAvatar(data.avatar || '');
-          setAddress(data.business?.address || '');
+          const businessAddress = data.business?.address;
+          if (typeof businessAddress === 'string') {
+            setAddress(businessAddress);
+          } else if (businessAddress?.street) {
+            setAddress(`${businessAddress.street}, ${businessAddress.city}, ${businessAddress.state}`);
+          } else {
+            setAddress('');
+          }
           setScheduleOpen(data.business?.schedule?.opening || '');
           setScheduleClose(data.business?.schedule?.closing || '');
           setSocials(data.business?.socials || '');

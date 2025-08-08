@@ -90,6 +90,41 @@ const ServicesScreen = () => {
           contentContainerStyle={styles.list}
         />
       )}
+
+      {/* Navegación de comerciante */}
+      <View style={styles.merchantBottomBar}>
+        <TouchableOpacity 
+          style={styles.bottomBarItem}
+          onPress={() => navigation.navigate('HomeComerciante')}
+        >
+          <Icon name="home-outline" size={24} color="#666" />
+          <Text style={styles.bottomBarText}>Inicio</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.bottomBarItem}
+          onPress={() => navigation.navigate('OrderManagement')}
+        >
+          <Icon name="receipt-outline" size={24} color="#666" />
+          <Text style={styles.bottomBarText}>Pedidos</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.bottomBarItem}
+          onPress={() => navigation.navigate('Services')}
+        >
+          <Icon name="restaurant" size={24} color="#FF6B6B" />
+          <Text style={[styles.bottomBarText, { color: '#FF6B6B' }]}>Servicios</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.bottomBarItem}
+          onPress={() => navigation.navigate('ProfileMerchant')}
+        >
+          <Icon name="person-outline" size={24} color="#666" />
+          <Text style={styles.bottomBarText}>Perfil</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
@@ -170,6 +205,39 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     color: '#999',
+  },
+  merchantBottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+    flexDirection: 'row',
+    justifyContent: 'space-evenly',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 50,
+    borderTopRightRadius: 50,
+    paddingHorizontal: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  bottomBarItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    paddingVertical: 5,
+  },
+  bottomBarText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+    fontWeight: '500',
   },
 });
 

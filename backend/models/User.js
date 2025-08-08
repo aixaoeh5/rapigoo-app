@@ -38,7 +38,7 @@ const UserSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['cliente', 'comerciante', 'admin'],
+    enum: ['cliente', 'comerciante', 'admin', 'delivery'],
     default: 'cliente',
   },
   phone: {
@@ -63,6 +63,91 @@ const UserSchema = new mongoose.Schema({
     default: 'pendiente',
   },
   business: businessSchema,
+
+  // FAVORITOS (todos los usuarios)
+  favorites: {
+    merchants: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }],
+    services: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Service'
+    }],
+    merchantsAddedAt: [{
+      merchantId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      addedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+    servicesAddedAt: [{
+      serviceId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Service'
+      },
+      addedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }]
+  },
+
+  // MÉTRICAS ADICIONALES
+  rating: {
+    type: Number,
+    min: 0,
+    max: 5,
+    default: 0
+  },
+  totalOrders: {
+    type: Number,
+    default: 0
+  },
+  lastLoginAt: {
+    type: Date
+  },
+
+  // PREFERENCIAS DE NOTIFICACIONES
+  notificationPreferences: {
+    orderUpdates: {
+      type: Boolean,
+      default: true
+    },
+    promotions: {
+      type: Boolean,
+      default: true
+    },
+    newMerchants: {
+      type: Boolean,
+      default: true
+    },
+    sound: {
+      type: Boolean,
+      default: true
+    },
+    vibrate: {
+      type: Boolean,
+      default: true
+    },
+    quiet_hours: {
+      enabled: {
+        type: Boolean,
+        default: false
+      },
+      start: {
+        type: String,
+        default: '22:00'
+      },
+      end: {
+        type: String,
+        default: '07:00'
+      }
+    }
+  },
 }, {
   timestamps: true,
 });

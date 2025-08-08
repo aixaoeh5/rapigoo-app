@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
-const verifyToken = (req, res, next) => {
+const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -12,8 +13,18 @@ const verifyToken = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
+    // Obtener datos completos del usuario de la base de datos
+    const user = await User.findById(decoded.id).select('_id name email role');
+    
+    if (!user) {
+      return res.status(401).json({ message: 'Usuario no encontrado' });
+    }
+
     req.user = {
-      id: decoded.id, 
+      id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+      role: user.role
     };
 
     next();

@@ -3,15 +3,16 @@ const mongoose = require('mongoose');
 const Joi = require('joi');
 const router = express.Router();
 const Service = require('../models/Service');
+const Category = require('../models/Category');
 const verifyToken = require('../middleware/verifyToken');
 
 
 const serviceSchema = Joi.object({
-  image:      Joi.string().uri().required(),
+  image:      Joi.string().required(), // Permitir cualquier string, no solo URI
   title:      Joi.string().min(3).max(100).required(),
   price:      Joi.number().positive().required(),
   category:   Joi.string().required(),
-  description:Joi.string().min(10).required(),
+  description:Joi.string().min(5).required(), // Reducir mínimo
 });
 
 
@@ -22,14 +23,42 @@ router.post('/', verifyToken, async (req, res, next) => {
       return res.status(400).json({ success: false, message: error.details[0].message });
     }
 
-    const service = new Service({
+    // Find or create category
+    let categoryDoc = await Category.findOne({
       merchantId: req.user.id,
-      ...value
+      name: value.category,
+      isActive: true
     });
 
+    // If category doesn't exist, create it
+    if (!categoryDoc) {
+      categoryDoc = new Category({
+        merchantId: req.user.id,
+        name: value.category,
+        description: `Categoría para ${value.category}`,
+        icon: '📦',
+        order: 0
+      });
+      await categoryDoc.save();
+      console.log(`✅ Nueva categoría creada: ${value.category}`);
+    }
+
+    // Transform client data to match Service model
+    const serviceData = {
+      merchantId: req.user.id,
+      name: value.title,           // Map title to name
+      description: value.description,
+      price: value.price,
+      category: value.category,
+      categoryId: categoryDoc._id, // Use real category ID
+      images: value.image ? [value.image] : [], // Convert single image to array
+    };
+
+    const service = new Service(serviceData);
     const saved = await service.save();
     res.status(201).json({ success: true, data: saved });
   } catch (err) {
+    console.error('❌ Error creating service:', err);
     next(err);
   }
 });
@@ -47,9 +76,18 @@ router.put('/:id', verifyToken, async (req, res, next) => {
       return res.status(400).json({ success: false, message: error.details[0].message });
     }
 
+    // Transform client data to match Service model
+    const serviceData = {
+      name: value.title,           // Map title to name
+      description: value.description,
+      price: value.price,
+      category: value.category,
+      images: value.image ? [value.image] : [], // Convert single image to array
+    };
+
     const updated = await Service.findOneAndUpdate(
       { _id: id, merchantId: req.user.id },
-      value,
+      serviceData,
       { new: true }
     );
 

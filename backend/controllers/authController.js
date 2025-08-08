@@ -1,17 +1,8 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
 const admin = require('../firebaseAdmin');
-
-// Configuración de transporte común
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+const emailService = require('../utils/emailService');
 
 // LOGIN
 exports.loginUser = async (req, res) => {
@@ -117,19 +108,7 @@ exports.registerUser = async (req, res) => {
 
     await user.save();
 
-    await transporter.sendMail({
-      from: `"Rapigoo 🚀" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Verifica tu cuenta en Rapigoo 🛵',
-      html: `
-        <div style="font-family: Arial, sans-serif; padding: 20px;">
-          <h2>¡Hola ${name || 'usuario'}!</h2>
-          <p>Tu código de verificación es:</p>
-          <h1>${verificationCode}</h1>
-          <p>Ingresalo en la app para activar tu cuenta.</p>
-        </div>
-      `,
-    });
+    await emailService.sendVerificationCode(email, verificationCode, name);
 
     res
       .status(201)
@@ -296,14 +275,11 @@ exports.resendVerificationCode = async (req, res) => {
         ? `<p>Estás intentando recuperar tu contraseña. Tu código es:</p><h1>${newCode}</h1>`
         : `<p>Tu código de verificación es:</p><h1>${newCode}</h1>`;
 
-    const mailOptions = {
-      from: `"Rapigoo 🚀" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject,
-      html: `<div style="font-family: Arial, sans-serif; padding: 20px;">${html}</div>`,
-    };
-
-    await transporter.sendMail(mailOptions);
+    if (context === 'reset') {
+      await emailService.sendPasswordResetCode(email, newCode);
+    } else {
+      await emailService.sendVerificationCode(email, newCode, user.name);
+    }
 
     res.status(200).json({ success: true, message: 'Código enviado al correo' });
   } catch (err) {
@@ -380,28 +356,7 @@ exports.forgotPassword = async (req, res) => {
     user.verificationCode = resetCode;
     await user.save();
 
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-
-    const mailOptions = {
-      from: `"Rapigoo 🚀" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: '🔐 Recuperación de contraseña',
-      html: `
-        <div style="font-family: Arial, sans-serif; padding: 20px;">
-          <h2>Hola 👋</h2>
-          <p>Tu código de recuperación es:</p>
-          <h1>${resetCode}</h1>
-        </div>
-      `,
-    };
-
-    await transporter.sendMail(mailOptions);
+    await emailService.sendPasswordResetCode(email, resetCode);
 
     res.status(200).json({ success: true, message: 'Código enviado al correo' });
   } catch (err) {
@@ -410,8 +365,41 @@ exports.forgotPassword = async (req, res) => {
   }
 };
 
-// UPDATE USER PROFILE
+// CAMBIAR CONTRASEÑA
+exports.changePassword = async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
 
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ message: 'Se requieren la contraseña actual y la nueva' });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ message: 'La nueva contraseña debe tener al menos 6 caracteres' });
+  }
+
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) return res.status(400).json({ message: 'Contraseña actual incorrecta' });
+
+    if (currentPassword === newPassword) {
+      return res.status(400).json({ message: 'La nueva contraseña debe ser diferente a la actual' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    await user.save();
+
+    res.status(200).json({ message: 'Contraseña cambiada exitosamente' });
+  } catch (error) {
+    console.error('❌ Error al cambiar contraseña:', error);
+    res.status(500).json({ message: 'Error al cambiar la contraseña' });
+  }
+};
+
+// UPDATE USER PROFILE
 exports.updateUserProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user.id); 

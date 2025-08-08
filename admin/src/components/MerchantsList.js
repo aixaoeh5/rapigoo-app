@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 
-const MerchantsList = () => {
+const MerchantsList = ({ onUpdate }) => {
   const [merchants, setMerchants] = useState([]);
 
 useEffect(() => {
@@ -36,6 +36,11 @@ const updateStatus = async (id, newStatus) => {
     );
     setMerchants(updated);
     alert(`Comerciante ${newStatus} con éxito ✅`);
+    
+    // Notificar al dashboard para actualizar estadísticas
+    if (onUpdate) {
+      onUpdate();
+    }
   } catch (error) {
     console.error(`❌ Error al cambiar estado del comerciante:`, error);
     alert('No se pudo actualizar el estado');
