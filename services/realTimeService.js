@@ -32,7 +32,7 @@ class RealTimeService {
 
   async connect(serverUrl = null) {
     try {
-      const token = await AsyncStorage.getItem('userToken');
+      const token = await AsyncStorage.getItem('token');
       
       if (!token) {
         console.log('⚠️ No token available for socket connection');
@@ -334,6 +334,53 @@ class RealTimeService {
       reconnectAttempts: this.reconnectAttempts,
       hasSocket: !!this.socket
     };
+  }
+
+  // Event emitter methods for compatibility
+  on(event, callback) {
+    if (!this.eventListeners) {
+      this.eventListeners = new Map();
+    }
+    
+    if (!this.eventListeners.has(event)) {
+      this.eventListeners.set(event, []);
+    }
+    
+    this.eventListeners.get(event).push(callback);
+    console.log(`📎 Listener added for event: ${event}`);
+  }
+
+  off(event, callback) {
+    if (!this.eventListeners || !this.eventListeners.has(event)) {
+      return;
+    }
+    
+    const listeners = this.eventListeners.get(event);
+    const index = listeners.indexOf(callback);
+    
+    if (index > -1) {
+      listeners.splice(index, 1);
+      console.log(`🔌 Listener removed for event: ${event}`);
+      
+      if (listeners.length === 0) {
+        this.eventListeners.delete(event);
+      }
+    }
+  }
+
+  emit(event, data) {
+    if (!this.eventListeners || !this.eventListeners.has(event)) {
+      return;
+    }
+    
+    const listeners = this.eventListeners.get(event);
+    listeners.forEach(callback => {
+      try {
+        callback(data);
+      } catch (error) {
+        console.error(`Error in event listener for ${event}:`, error);
+      }
+    });
   }
 }
 

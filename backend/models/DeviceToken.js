@@ -86,7 +86,7 @@ DeviceTokenSchema.statics.cleanupOldTokens = async function(daysOld = 90) {
 // Método estático para obtener tokens activos por usuario
 DeviceTokenSchema.statics.getActiveTokensByUser = async function(userId, platform = null) {
   const query = {
-    userId: mongoose.Types.ObjectId(userId),
+    userId: new mongoose.Types.ObjectId(userId),
     isActive: true
   };
   
@@ -128,6 +128,101 @@ DeviceTokenSchema.statics.getStats = async function() {
   ];
   
   return this.aggregate(pipeline);
+};
+
+// Método estático para registrar o actualizar token (evita duplicados)
+DeviceTokenSchema.statics.upsertToken = async function(userId, deviceToken, platform, deviceInfo = {}) {
+  const maxRetries = 3;
+  let attempt = 0;
+  
+  while (attempt < maxRetries) {
+    try {
+      // Primero, desactivar cualquier token existente para este dispositivo
+      await this.updateMany(
+        { deviceToken: deviceToken },
+        { 
+          $set: { 
+            isActive: false, 
+            unregisteredAt: new Date() 
+          } 
+        }
+      );
+
+      // Crear o actualizar token para el usuario actual
+      const result = await this.findOneAndUpdate(
+        { 
+          userId: new mongoose.Types.ObjectId(userId),
+          deviceToken: deviceToken 
+        },
+        {
+          $set: {
+            platform: platform,
+            deviceInfo: deviceInfo,
+            isActive: true,
+            lastUpdated: new Date()
+          },
+          $unset: { unregisteredAt: 1 }
+        },
+        { 
+          upsert: true, 
+          new: true,
+          runValidators: true
+        }
+      );
+
+      return result;
+      
+    } catch (error) {
+      attempt++;
+      
+      // Si es error E11000 y no es el último intento, reintentar
+      if (error.code === 11000 && attempt < maxRetries) {
+        console.log(`⚠️ E11000 en intento ${attempt}, reintentando... (${deviceToken.substring(0, 15)}...)`);
+        
+        // Pequeña pausa antes de reintentar
+        await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+        continue;
+      }
+      
+      // Si es E11000 en el último intento, buscar el token existente
+      if (error.code === 11000) {
+        console.log(`🔄 E11000 persistente, buscando token existente... (${deviceToken.substring(0, 15)}...)`);
+        
+        try {
+          // Buscar el token existente y actualizarlo
+          const existingToken = await this.findOneAndUpdate(
+            { deviceToken: deviceToken },
+            {
+              $set: {
+                userId: new mongoose.Types.ObjectId(userId),
+                platform: platform,
+                deviceInfo: deviceInfo,
+                isActive: true,
+                lastUpdated: new Date()
+              },
+              $unset: { unregisteredAt: 1 }
+            },
+            { 
+              new: true,
+              runValidators: true
+            }
+          );
+          
+          if (existingToken) {
+            console.log(`✅ Token existente actualizado exitosamente (${deviceToken.substring(0, 15)}...)`);
+            return existingToken;
+          }
+        } catch (updateError) {
+          console.error('❌ Error actualizando token existente:', updateError);
+        }
+      }
+      
+      console.error(`❌ Error en upsertToken (intento ${attempt}/${maxRetries}):`, error);
+      throw error;
+    }
+  }
+  
+  throw new Error(`upsertToken falló después de ${maxRetries} intentos`);
 };
 
 module.exports = mongoose.model('DeviceToken', DeviceTokenSchema);

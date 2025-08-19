@@ -1,12 +1,34 @@
 import { Platform, Alert, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import PushNotification from 'react-native-push-notification';
-import PushNotificationIOS from '@react-native-community/push-notification-ios';
-import { apiClient } from '../api/apiClient';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import Constants from 'expo-constants';
+import apiClient from '../api/apiClient';
+
+// Suprimir warnings específicos de Expo Go
+const originalWarn = console.warn;
+console.warn = (message, ...args) => {
+  if (typeof message === 'string' && 
+      (message.includes('expo-notifications: Android Push notifications') ||
+       message.includes('remote notifications') ||
+       message.includes('removed from Expo Go'))) {
+    return; // Suprimir este warning específico
+  }
+  originalWarn(message, ...args);
+};
+
+// Configurar el comportamiento de las notificaciones
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 class NotificationService {
   constructor() {
-    this.deviceToken = null;
+    this.deviceId = null;
     this.isInitialized = false;
     this.notificationQueue = [];
     this.preferences = {
@@ -16,6 +38,8 @@ class NotificationService {
       sound: true,
       vibrate: true
     };
+    this.notificationListener = null;
+    this.responseListener = null;
   }
 
   // Inicializar el servicio de notificaciones
@@ -23,150 +47,118 @@ class NotificationService {
     if (this.isInitialized) return;
 
     try {
+      // Cargar preferencias silenciosamente
       await this.loadPreferences();
-      this.configurePushNotifications();
-      await this.requestPermissions();
-      this.isInitialized = true;
-      console.log('✅ Servicio de notificaciones inicializado');
-    } catch (error) {
-      console.error('❌ Error inicializando notificaciones:', error);
-    }
-  }
-
-  // Configurar las notificaciones push
-  configurePushNotifications() {
-    PushNotification.configure({
-      // Callback cuando se recibe una notificación remota
-      onNotification: (notification) => {
-        console.log('📱 Notificación recibida:', notification);
-        this.handleNotification(notification);
-
-        // Para iOS
-        if (Platform.OS === 'ios') {
-          notification.finish(PushNotificationIOS.FetchResult.NoData);
-        }
-      },
-
-      // Callback para el token del dispositivo
-      onRegister: (token) => {
-        console.log('🔑 Token de dispositivo:', token);
-        this.deviceToken = token.token;
-        this.saveDeviceToken(token.token);
-        this.sendTokenToServer(token.token);
-      },
-
-      // Permisos para iOS
-      permissions: {
-        alert: true,
-        badge: true,
-        sound: true,
-      },
-
-      // Configuración de canal para Android
-      channelId: 'rapigoo-default',
-      channelName: 'Rapigoo Notifications',
-      channelDescription: 'Notificaciones generales de Rapigoo',
-
-      // Solicitar permisos en inicio
-      requestPermissions: Platform.OS === 'ios',
-    });
-
-    // Crear canal de notificación para Android
-    this.createNotificationChannels();
-  }
-
-  // Crear canales de notificación (Android)
-  createNotificationChannels() {
-    if (Platform.OS === 'android') {
-      // Canal para actualizaciones de pedidos
-      PushNotification.createChannel(
-        {
-          channelId: 'rapigoo-orders',
-          channelName: 'Actualizaciones de Pedidos',
-          channelDescription: 'Notificaciones sobre el estado de tus pedidos',
-          importance: 4, // HIGH
-          vibrate: true,
-        },
-        (created) => console.log(`Canal de pedidos ${created ? 'creado' : 'ya existe'}`)
-      );
-
-      // Canal para promociones
-      PushNotification.createChannel(
-        {
-          channelId: 'rapigoo-promotions',
-          channelName: 'Promociones y Ofertas',
-          channelDescription: 'Promociones especiales y ofertas de comerciantes',
-          importance: 3, // DEFAULT
-          vibrate: false,
-        },
-        (created) => console.log(`Canal de promociones ${created ? 'creado' : 'ya existe'}`)
-      );
-
-      // Canal para nuevos comerciantes
-      PushNotification.createChannel(
-        {
-          channelId: 'rapigoo-merchants',
-          channelName: 'Nuevos Comerciantes',
-          channelDescription: 'Notificaciones de nuevos comerciantes en tu área',
-          importance: 2, // LOW
-          vibrate: false,
-        },
-        (created) => console.log(`Canal de comerciantes ${created ? 'creado' : 'ya existe'}`)
-      );
-    }
-  }
-
-  // Solicitar permisos de notificaciones
-  async requestPermissions() {
-    try {
-      if (Platform.OS === 'android') {
-        // Android maneja permisos automáticamente desde API 33+
-        return true;
-      } else {
-        // iOS requiere solicitar permisos explícitamente
-        const result = await PushNotificationIOS.requestPermissions({
-          alert: true,
-          badge: true,
-          sound: true,
+      this.deviceId = await this.getOrCreateDeviceId();
+      
+      // Configurar solo notificaciones locales para Expo Go
+      const notificationsSetup = await this.setupLocalNotifications();
+      
+      if (notificationsSetup) {
+        this.setupNotificationListeners();
+        // Registro opcional del dispositivo (no crítico)
+        this.registerDeviceWithServer().catch((error) => {
+          console.log('⚠️ Registro de dispositivo falló (no crítico):', error.message);
         });
-        return result.alert && result.badge && result.sound;
       }
+      
+      this.isInitialized = true;
+      console.log('✅ Notificaciones locales listas');
     } catch (error) {
-      console.error('Error solicitando permisos:', error);
+      // Log mínimo para no saturar la consola
+      console.log('⚠️ Notificaciones no disponibles');
+    }
+  }
+
+  // Configurar notificaciones locales (compatible con Expo Go)
+  async setupLocalNotifications() {
+    try {
+      // Solicitar permisos para notificaciones locales
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      
+      if (finalStatus !== 'granted') {
+        // Silencioso - solo mostrar diálogo si es necesario
+        setTimeout(() => this.showNotificationSettingsDialog(), 2000);
+        return false;
+      }
+
+      // Configurar canales para Android
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'Notificaciones Generales',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF231F7C',
+        });
+
+        // Canal específico para pedidos
+        await Notifications.setNotificationChannelAsync('rapigoo-orders', {
+          name: 'Actualizaciones de Pedidos',
+          description: 'Notificaciones sobre el estado de tus pedidos',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#4CAF50',
+          sound: 'default',
+          showBadge: true,
+        });
+
+        // Canal para promociones
+        await Notifications.setNotificationChannelAsync('rapigoo-promotions', {
+          name: 'Promociones y Ofertas',
+          description: 'Promociones especiales y ofertas de comerciantes',
+          importance: Notifications.AndroidImportance.DEFAULT,
+          vibrationPattern: [0, 100, 100, 100],
+          lightColor: '#FF6B6B',
+          showBadge: false,
+        });
+      }
+
+      // Configuración exitosa - log mínimo
+      return true;
+      
+    } catch (error) {
+      // Error silencioso
       return false;
     }
   }
 
-  // Manejar notificación recibida
-  handleNotification(notification) {
-    const { data, userInteraction } = notification;
+  // Configurar listeners de notificaciones
+  setupNotificationListeners() {
+    // Listener para cuando se recibe una notificación mientras la app está en primer plano
+    this.notificationListener = Notifications.addNotificationReceivedListener(notification => {
+      console.log('📱 Notificación recibida:', notification);
+      this.saveNotificationToHistory(notification);
+    });
 
-    // Solo procesar si el usuario interactuó con la notificación
-    if (userInteraction) {
-      this.handleNotificationTap(notification);
-    }
-
-    // Guardar en historial
-    this.saveNotificationToHistory(notification);
+    // Listener para cuando el usuario toca una notificación
+    this.responseListener = Notifications.addNotificationResponseReceivedListener(response => {
+      console.log('👆 Notificación tocada:', response);
+      this.handleNotificationTap(response.notification);
+    });
   }
 
   // Manejar tap en notificación
   handleNotificationTap(notification) {
-    const { data } = notification;
+    const { data } = notification.request.content;
 
-    switch (data.type) {
+    switch (data?.type) {
       case 'order_update':
         // Navegar a detalles del pedido
         if (data.orderId) {
-          // NavigationService.navigate('OrderDetail', { orderId: data.orderId });
           console.log('Navegar a pedido:', data.orderId);
+          // Esta funcionalidad se implementará con navigation ref
         }
         break;
 
       case 'new_promotion':
         // Navegar a la promoción
         if (data.promotionId) {
-          // NavigationService.navigate('Promotion', { promotionId: data.promotionId });
           console.log('Navegar a promoción:', data.promotionId);
         }
         break;
@@ -174,71 +166,154 @@ class NotificationService {
       case 'new_merchant':
         // Navegar al perfil del comerciante
         if (data.merchantId) {
-          // NavigationService.navigate('MerchantProfile', { merchantId: data.merchantId });
           console.log('Navegar a comerciante:', data.merchantId);
         }
         break;
 
       default:
-        // Navegar a home
-        // NavigationService.navigate('Home');
         console.log('Navegar a home');
     }
   }
 
   // Enviar notificación local
-  sendLocalNotification(options) {
+  async sendLocalNotification(options) {
     const defaultOptions = {
-      channelId: 'rapigoo-default',
       title: 'Rapigoo',
-      message: '',
-      playSound: this.preferences.sound,
-      vibrate: this.preferences.vibrate,
+      body: '',
+      data: {},
+      sound: this.preferences.sound ? 'default' : null,
       ...options
     };
 
-    PushNotification.localNotification(defaultOptions);
+    try {
+      const identifier = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: defaultOptions.title,
+          body: defaultOptions.message || defaultOptions.body,
+          data: defaultOptions.data,
+          sound: defaultOptions.sound,
+        },
+        trigger: null, // Enviar inmediatamente
+      });
+      
+      // Notificación enviada exitosamente
+      return identifier;
+    } catch (error) {
+      // Error silencioso
+      return null;
+    }
   }
 
   // Programar notificación local
-  scheduleLocalNotification(options, date) {
+  async scheduleLocalNotification(options, date) {
     const defaultOptions = {
-      channelId: 'rapigoo-default',
       title: 'Rapigoo',
-      message: '',
-      date: date,
-      playSound: this.preferences.sound,
-      vibrate: this.preferences.vibrate,
+      body: '',
+      data: {},
+      sound: this.preferences.sound ? 'default' : null,
       ...options
     };
 
-    PushNotification.localNotificationSchedule(defaultOptions);
+    try {
+      const identifier = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: defaultOptions.title,
+          body: defaultOptions.message || defaultOptions.body,
+          data: defaultOptions.data,
+          sound: defaultOptions.sound,
+        },
+        trigger: { date },
+      });
+      
+      // Notificación programada exitosamente
+      return identifier;
+    } catch (error) {
+      // Error silencioso
+      return null;
+    }
   }
 
   // Cancelar notificación programada
-  cancelLocalNotification(notificationId) {
-    PushNotification.cancelLocalNotifications({ id: notificationId });
+  async cancelLocalNotification(notificationId) {
+    try {
+      await Notifications.cancelScheduledNotificationAsync(notificationId);
+      console.log('🗑️ Notificación cancelada:', notificationId);
+    } catch (error) {
+      console.error('❌ Error cancelando notificación:', error);
+    }
   }
 
   // Cancelar todas las notificaciones locales
-  cancelAllLocalNotifications() {
-    PushNotification.cancelAllLocalNotifications();
+  async cancelAllLocalNotifications() {
+    try {
+      await Notifications.cancelAllScheduledNotificationsAsync();
+      console.log('🗑️ Todas las notificaciones canceladas');
+    } catch (error) {
+      console.error('❌ Error cancelando todas las notificaciones:', error);
+    }
   }
 
-  // Enviar token al servidor
-  async sendTokenToServer(token) {
+  // Registrar dispositivo en el servidor (sin push token para Expo Go)
+  async registerDeviceWithServer() {
     try {
-      await apiClient.post('/notifications/register', {
-        deviceToken: token,
+      // Verificar si hay token de autenticación
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        console.log('⚠️ No hay token de autenticación, omitiendo registro de dispositivo');
+        return;
+      }
+      
+      const deviceId = await this.getOrCreateDeviceId();
+      
+      const payload = {
+        deviceToken: deviceId, // ← Cambiado de deviceId a deviceToken
         platform: Platform.OS,
         deviceInfo: {
-          model: Platform.constants.Model || 'Unknown',
-          version: Platform.Version,
+          model: Device.modelName || 'Unknown',
+          version: Platform.Version?.toString() || 'Unknown',
+          appVersion: '1.0.0'
+          // Removidos campos no permitidos por el esquema de validación
         }
-      });
-      console.log('✅ Token enviado al servidor');
+      };
+      
+      console.log('📱 Enviando registro de dispositivo:', JSON.stringify(payload, null, 2));
+      console.log('📱 About to make POST request to /notifications/register...');
+      
+      const response = await apiClient.post('/notifications/register', payload);
+      
+      console.log('📱 Response received:', response.status);
+
+      if (response.data.success) {
+        console.log('✅ Dispositivo registrado en el servidor');
+        await AsyncStorage.setItem('device_registered', 'true');
+      }
     } catch (error) {
-      console.error('❌ Error enviando token al servidor:', error);
+      console.error('❌ Error registrando dispositivo:', error);
+      console.error('❌ Error details:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message
+      });
+      
+      // Log más detallado de la respuesta del servidor
+      if (error.response?.data?.details) {
+        console.error('❌ Server validation errors:', JSON.stringify(error.response.data.details, null, 2));
+      }
+    }
+  }
+
+  // Generar o recuperar ID único del dispositivo
+  async getOrCreateDeviceId() {
+    try {
+      let deviceId = await AsyncStorage.getItem('unique_device_id');
+      if (!deviceId) {
+        deviceId = `expo_go_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        await AsyncStorage.setItem('unique_device_id', deviceId);
+      }
+      return deviceId;
+    } catch (error) {
+      console.error('Error generando device ID:', error);
+      return `fallback_${Date.now()}`;
     }
   }
 
@@ -274,7 +349,7 @@ class NotificationService {
   // Guardar token del dispositivo
   async saveDeviceToken(token) {
     try {
-      await AsyncStorage.setItem('deviceToken', token);
+      await AsyncStorage.setItem('expo_push_token', token);
     } catch (error) {
       console.error('Error guardando token:', error);
     }
@@ -283,9 +358,9 @@ class NotificationService {
   // Cargar token del dispositivo
   async loadDeviceToken() {
     try {
-      const token = await AsyncStorage.getItem('deviceToken');
+      const token = await AsyncStorage.getItem('expo_push_token');
       if (token) {
-        this.deviceToken = token;
+        this.expoPushToken = token;
       }
       return token;
     } catch (error) {
@@ -300,9 +375,9 @@ class NotificationService {
       const history = await this.getNotificationHistory();
       const newNotification = {
         id: Date.now().toString(),
-        title: notification.title,
-        message: notification.message,
-        data: notification.data,
+        title: notification.request.content.title,
+        message: notification.request.content.body,
+        data: notification.request.content.data,
         receivedAt: new Date().toISOString(),
         read: false
       };
@@ -354,34 +429,29 @@ class NotificationService {
   }
 
   // Obtener cuenta de badge
-  getBadgeCount() {
-    return new Promise((resolve) => {
-      if (Platform.OS === 'ios') {
-        PushNotificationIOS.getApplicationIconBadgeNumber(resolve);
-      } else {
-        resolve(0); // Android maneja badges diferente
-      }
-    });
+  async getBadgeCount() {
+    try {
+      return await Notifications.getBadgeCountAsync();
+    } catch (error) {
+      console.error('Error obteniendo badge count:', error);
+      return 0;
+    }
   }
 
   // Establecer cuenta de badge
-  setBadgeCount(count) {
-    if (Platform.OS === 'ios') {
-      PushNotificationIOS.setApplicationIconBadgeNumber(count);
+  async setBadgeCount(count) {
+    try {
+      await Notifications.setBadgeCountAsync(count);
+    } catch (error) {
+      console.error('Error estableciendo badge count:', error);
     }
-    // Android: Los badges se manejan automáticamente por el sistema
   }
 
   // Verificar si las notificaciones están habilitadas
   async checkNotificationPermissions() {
     try {
-      if (Platform.OS === 'ios') {
-        const permissions = await PushNotificationIOS.checkPermissions();
-        return permissions.alert && permissions.badge && permissions.sound;
-      } else {
-        // Para Android, asumir que están habilitadas (se maneja automáticamente)
-        return true;
-      }
+      const { status } = await Notifications.getPermissionsAsync();
+      return status === 'granted';
     } catch (error) {
       console.error('Error verificando permisos:', error);
       return false;
@@ -422,12 +492,13 @@ class NotificationService {
       confirmed: '✅',
       preparing: '👨‍🍳',
       ready: '📦',
+      picked_up: '🚚',
+      in_transit: '🛣️',
       completed: '🎉',
       cancelled: '❌'
     };
 
     this.sendLocalNotification({
-      channelId: 'rapigoo-orders',
       title: `${statusIcons[status] || '📋'} Pedido ${orderNumber}`,
       message: message,
       data: {
@@ -443,7 +514,6 @@ class NotificationService {
     if (!this.preferences.promotions) return;
 
     this.sendLocalNotification({
-      channelId: 'rapigoo-promotions',
       title: `🎉 Nueva oferta de ${merchantName}`,
       message: promotion.description,
       data: {
@@ -459,7 +529,6 @@ class NotificationService {
     const reminderTime = new Date(estimatedTime.getTime() - 10 * 60 * 1000); // 10 min antes
 
     this.scheduleLocalNotification({
-      channelId: 'rapigoo-orders',
       title: '⏰ Tu pedido está casi listo',
       message: `El pedido ${orderNumber} estará listo en aproximadamente 10 minutos`,
       data: {
@@ -469,10 +538,67 @@ class NotificationService {
     }, reminderTime);
   }
 
+  // Notificación de bienvenida para probar que funciona
+  sendWelcomeNotification() {
+    this.sendLocalNotification({
+      title: '🎉 ¡Bienvenido a Rapigoo!',
+      message: 'Las notificaciones están funcionando correctamente. Te mantendremos informado sobre tus pedidos.',
+      data: {
+        type: 'welcome',
+        action: 'open_home'
+      }
+    });
+  }
+
+  // Enviar notificación de prueba
+  sendTestNotification() {
+    this.sendLocalNotification({
+      title: '🧪 Notificación de prueba',
+      message: 'Esta es una notificación de prueba para verificar que todo funciona correctamente.',
+      data: {
+        type: 'test',
+        timestamp: new Date().toISOString()
+      }
+    });
+  }
+
+  // Programar recordatorios periódicos para verificar pedidos activos
+  scheduleOrderCheckReminders(orders) {
+    // Cancelar recordatorios anteriores
+    this.cancelAllLocalNotifications();
+    
+    orders.forEach(order => {
+      if (['pending', 'confirmed', 'preparing', 'ready'].includes(order.status)) {
+        // Programar recordatorio cada 5 minutos para pedidos activos
+        const reminderIntervals = [5, 10, 15, 20, 30]; // minutos
+        
+        reminderIntervals.forEach(minutes => {
+          const reminderTime = new Date(Date.now() + minutes * 60 * 1000);
+          
+          this.scheduleLocalNotification({
+            title: `📋 Pedido ${order.orderNumber}`,
+            message: `Verificando el estado de tu pedido...`,
+            data: {
+              type: 'order_check',
+              orderId: order._id,
+              orderNumber: order.orderNumber
+            }
+          }, reminderTime);
+        });
+      }
+    });
+  }
+
   // Limpiar recursos
   cleanup() {
     this.cancelAllLocalNotifications();
-    this.deviceToken = null;
+    if (this.notificationListener) {
+      Notifications.removeNotificationSubscription(this.notificationListener);
+    }
+    if (this.responseListener) {
+      Notifications.removeNotificationSubscription(this.responseListener);
+    }
+    this.deviceId = null;
     this.isInitialized = false;
   }
 
@@ -480,9 +606,12 @@ class NotificationService {
   getServiceInfo() {
     return {
       isInitialized: this.isInitialized,
-      hasDeviceToken: !!this.deviceToken,
+      hasDeviceId: !!this.deviceId,
       preferences: this.preferences,
-      platform: Platform.OS
+      platform: Platform.OS,
+      isExpoGo: true,
+      supportsLocalNotifications: true,
+      supportsPushNotifications: false
     };
   }
 }

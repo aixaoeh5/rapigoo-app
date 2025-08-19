@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { DELIVERY_STATUS, formatCoordinates } = require('../utils/statusConstants');
 
 const locationSchema = new mongoose.Schema({
   coordinates: {
@@ -54,8 +55,18 @@ const deliveryTrackingSchema = new mongoose.Schema({
   orderId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Order',
-    required: true,
-    unique: true
+    required: [true, 'Order ID is required for delivery tracking'],
+    unique: true,
+    validate: {
+      validator: async function(orderId) {
+        // Validate that the referenced order exists
+        if (!orderId) return false;
+        const Order = mongoose.model('Order');
+        const order = await Order.findById(orderId);
+        return !!order;
+      },
+      message: 'Referenced order does not exist'
+    }
   },
   deliveryPersonId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -63,11 +74,26 @@ const deliveryTrackingSchema = new mongoose.Schema({
     required: true
   },
   
+  // Concurrency control
+  version: {
+    type: Number,
+    default: 0
+  },
+  operationLock: {
+    type: Date,
+    default: null,
+    index: { expireAfterSeconds: 30 } // Auto-expire after 30 seconds
+  },
+  lastOperationId: {
+    type: String,
+    default: null
+  },
+  
   // Current tracking status
   status: {
     type: String,
-    enum: ['assigned', 'heading_to_pickup', 'at_pickup', 'picked_up', 'heading_to_delivery', 'at_delivery', 'delivered', 'cancelled'],
-    default: 'assigned'
+    enum: Object.values(DELIVERY_STATUS),
+    default: DELIVERY_STATUS.ASSIGNED
   },
   
   // Location tracking
@@ -128,7 +154,7 @@ const deliveryTrackingSchema = new mongoose.Schema({
   statusHistory: [{
     status: {
       type: String,
-      enum: ['assigned', 'heading_to_pickup', 'at_pickup', 'picked_up', 'heading_to_delivery', 'at_delivery', 'delivered', 'cancelled']
+      enum: Object.values(DELIVERY_STATUS)
     },
     timestamp: {
       type: Date,
@@ -235,49 +261,9 @@ deliveryTrackingSchema.virtual('currentETA').get(function() {
   return new Date(Date.now() + etaMinutes * 60000);
 });
 
-// Pre-save middleware to update status history
+// Pre-save middleware for basic validation only
 deliveryTrackingSchema.pre('save', function(next) {
-  if (this.isModified('status') && !this.isNew) {
-    this.statusHistory.push({
-      status: this.status,
-      timestamp: new Date(),
-      location: this.currentLocation?.coordinates,
-      notes: this.getStatusDescription(this.status)
-    });
-    
-    // Update timing fields based on status
-    switch (this.status) {
-      case 'at_pickup':
-        this.pickupLocation.arrived = true;
-        this.pickupLocation.arrivedAt = new Date();
-        break;
-      case 'picked_up':
-        this.pickupLocation.leftAt = new Date();
-        this.actualPickupTime = new Date();
-        break;
-      case 'at_delivery':
-        this.deliveryLocation.arrived = true;
-        this.deliveryLocation.arrivedAt = new Date();
-        break;
-      case 'delivered':
-        this.deliveryLocation.deliveredAt = new Date();
-        this.actualDeliveryTime = new Date();
-        this.isLive = false;
-        
-        // Calculate final metrics
-        if (this.createdAt) {
-          this.actualTotalTime = Math.round((this.actualDeliveryTime - this.createdAt) / 60000);
-        }
-        
-        // Determine if delivery was on time
-        if (this.estimatedDeliveryTime) {
-          this.metrics.onTimeDelivery = this.actualDeliveryTime <= this.estimatedDeliveryTime;
-        }
-        break;
-    }
-  }
-  
-  // Update last location update timestamp
+  // Update last location update timestamp only
   if (this.isModified('currentLocation')) {
     this.lastLocationUpdate = new Date();
   }
@@ -320,7 +306,135 @@ deliveryTrackingSchema.methods.toRadians = function(degrees) {
   return degrees * (Math.PI / 180);
 };
 
-deliveryTrackingSchema.methods.updateLocation = function(locationData) {
+// Simplified atomic update method without complex locking
+deliveryTrackingSchema.methods.atomicUpdate = async function(updateFn, operationId = null, maxRetries = 3) {
+  const Model = this.constructor;
+  let retryCount = 0;
+  
+  operationId = operationId || `op_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
+  while (retryCount < maxRetries) {
+    try {
+      // Get fresh document
+      const currentDoc = await Model.findById(this._id);
+      if (!currentDoc) {
+        throw new Error('Document not found');
+      }
+      
+      // Apply the update function
+      const updatedDoc = await updateFn.call(currentDoc);
+      
+      // Prepare update data excluding version and _id
+      const updateData = { ...updatedDoc.toObject() };
+      delete updateData.version;
+      delete updateData._id;
+      delete updateData.__v;
+      updateData.lastOperationId = operationId;
+      
+      // Use findOneAndUpdate with version check for optimistic locking
+      const finalResult = await Model.findOneAndUpdate(
+        { 
+          _id: updatedDoc._id,
+          version: currentDoc.version  // Optimistic locking
+        },
+        {
+          ...updateData,
+          $inc: { version: 1 }
+        },
+        { 
+          new: true,
+          runValidators: true
+        }
+      );
+      
+      if (!finalResult) {
+        // Version conflict, retry
+        console.log(`⚠️ Version conflict on attempt ${retryCount + 1}, retrying...`);
+        await this.waitWithBackoff(retryCount);
+        retryCount++;
+        continue;
+      }
+      
+      // Update current document with final result
+      Object.assign(this, finalResult.toObject());
+      
+      // Emit real-time updates after successful save
+      this.emitRealtimeUpdate(operationId);
+      
+      return finalResult;
+      
+    } catch (error) {
+      console.error(`❌ Atomic update attempt ${retryCount + 1} failed:`, error.message);
+      
+      if (error.message.includes('E11000') || error.message.includes('VersionError') || 
+          error.message.includes('version') || !error.message.includes('cast')) {
+        // Recoverable error, retry
+        await this.waitWithBackoff(retryCount);
+        retryCount++;
+        continue;
+      }
+      
+      // Non-recoverable error
+      throw error;
+    }
+  }
+  
+  throw new Error(`Failed to complete atomic update after ${maxRetries} retries`);
+};
+
+// Wait with exponential backoff
+deliveryTrackingSchema.methods.waitWithBackoff = async function(retryCount) {
+  const delay = Math.min(1000 * Math.pow(2, retryCount) + Math.random() * 1000, 5000);
+  await new Promise(resolve => setTimeout(resolve, delay));
+};
+
+// Emit real-time updates
+deliveryTrackingSchema.methods.emitRealtimeUpdate = function(operationId) {
+  process.nextTick(() => {
+    try {
+      const realTimeService = require('../services/socketService');
+      if (realTimeService && realTimeService.emitStatusUpdate) {
+        realTimeService.emitStatusUpdate({
+          orderId: this.orderId,
+          deliveryPersonId: this.deliveryPersonId,
+          status: this.status,
+          currentLocation: this.currentLocation,
+          operationId: operationId,
+          timestamp: new Date()
+        });
+      }
+    } catch (error) {
+      console.log('⚠️ Real-time service not available:', error.message);
+    }
+  });
+};
+
+// Location update with atomic operations
+deliveryTrackingSchema.methods.updateLocation = function(locationData, operationId = null) {
+  return this.atomicUpdate(async () => {
+    const statusChanged = this.updateLocationOnly(locationData);
+    
+    // If status changed due to automatic arrival, add to history
+    if (statusChanged) {
+      this.statusHistory.push({
+        status: this.status,
+        timestamp: new Date(),
+        location: this.currentLocation?.coordinates,
+        notes: 'Arrival detected automatically',
+        automatic: true,
+        operationId: operationId || `auto_${Date.now()}`
+      });
+      
+      // Update timing fields
+      this.updateTimingFields(this.status);
+    }
+    
+    return this;
+  }, operationId);
+};
+
+// Location update without triggering status changes (internal use)
+deliveryTrackingSchema.methods.updateLocationOnly = function(locationData) {
   const newLocation = {
     coordinates: [locationData.longitude, locationData.latitude],
     accuracy: locationData.accuracy,
@@ -367,79 +481,186 @@ deliveryTrackingSchema.methods.updateLocation = function(locationData) {
   this.lastLocationUpdate = new Date();
   
   // Check if arrived at destinations
-  this.checkArrivalStatus();
-  
-  return this.save();
+  return this.checkArrivalStatus();
+};
+
+// Extract timing field updates
+deliveryTrackingSchema.methods.updateTimingFields = function(status) {
+  switch (status) {
+    case 'at_pickup':
+      this.pickupLocation.arrived = true;
+      this.pickupLocation.arrivedAt = new Date();
+      break;
+    case 'picked_up':
+      this.pickupLocation.leftAt = new Date();
+      this.actualPickupTime = new Date();
+      break;
+    case 'at_delivery':
+      this.deliveryLocation.arrived = true;
+      this.deliveryLocation.arrivedAt = new Date();
+      break;
+    case 'delivered':
+      this.deliveryLocation.deliveredAt = new Date();
+      this.actualDeliveryTime = new Date();
+      this.isLive = false;
+      
+      // Calculate final metrics
+      if (this.createdAt) {
+        this.actualTotalTime = Math.round((this.actualDeliveryTime - this.createdAt) / 60000);
+      }
+      
+      // Determine if delivery was on time
+      if (this.estimatedDeliveryTime) {
+        this.metrics.onTimeDelivery = this.actualDeliveryTime <= this.estimatedDeliveryTime;
+      }
+      break;
+  }
 };
 
 deliveryTrackingSchema.methods.checkArrivalStatus = function() {
-  const ARRIVAL_THRESHOLD = 0.1; // 100 meters
+  const ARRIVAL_THRESHOLD = 0.2; // 200 meters (changed from 100m)
+  let statusChanged = false;
   
-  // Check pickup arrival
+  // FIX: Check pickup arrival - ONLY if not already arrived
   if (!this.pickupLocation.arrived && this.currentLocation) {
-    const distanceToPickup = this.calculateDistance(
-      this.currentLocation.coordinates,
-      this.pickupLocation.coordinates
-    );
-    
-    if (distanceToPickup <= ARRIVAL_THRESHOLD) {
-      if (this.status === 'heading_to_pickup' || this.status === 'assigned') {
+    // FIX: Verificar que el estado actual permite detección automática
+    if (this.status === 'heading_to_pickup' || this.status === 'assigned') {
+      const distanceToPickup = this.calculateDistance(
+        this.currentLocation.coordinates,
+        this.pickupLocation.coordinates
+      );
+      
+      console.log(`🎯 Distancia al pickup: ${distanceToPickup.toFixed(3)}km (umbral: ${ARRIVAL_THRESHOLD}km)`);
+      
+      if (distanceToPickup <= ARRIVAL_THRESHOLD) {
+        console.log('✅ Auto-arrival detected at pickup location');
         this.status = 'at_pickup';
+        this.pickupLocation.arrived = true;
+        this.pickupLocation.arrivedAt = new Date();
+        
+        // Add to status history
+        this.statusHistory.push({
+          status: 'at_pickup',
+          timestamp: new Date(),
+          location: this.currentLocation.coordinates,
+          notes: 'Arrival detected automatically',
+          automatic: true
+        });
+        
+        statusChanged = true;
       }
+    } else {
+      console.log(`⚠️ No auto-detection for pickup - current status: ${this.status}`);
     }
+  } else if (this.pickupLocation.arrived) {
+    console.log(`✅ Pickup arrival already detected at: ${this.pickupLocation.arrivedAt}`);
   }
   
-  // Check delivery arrival
-  if (!this.deliveryLocation.arrived && this.currentLocation && this.status === 'picked_up') {
-    const distanceToDelivery = this.calculateDistance(
-      this.currentLocation.coordinates,
-      this.deliveryLocation.coordinates
-    );
+  // FIX: Check delivery arrival - ONLY if not already arrived and in correct state
+  if (!this.deliveryLocation.arrived && this.currentLocation) {
+    // FIX: Verificar que el estado actual permite detección automática
+    if (this.status === 'heading_to_delivery') {
+      const distanceToDelivery = this.calculateDistance(
+        this.currentLocation.coordinates,
+        this.deliveryLocation.coordinates
+      );
+      
+      console.log(`🏠 Distancia al delivery: ${distanceToDelivery.toFixed(3)}km (umbral: ${ARRIVAL_THRESHOLD}km)`);
+      
+      if (distanceToDelivery <= ARRIVAL_THRESHOLD) {
+        console.log('✅ Auto-arrival detected at delivery location');
+        this.status = 'at_delivery';
+        this.deliveryLocation.arrived = true;
+        this.deliveryLocation.arrivedAt = new Date();
+        
+        // Add to status history
+        this.statusHistory.push({
+          status: 'at_delivery',
+          timestamp: new Date(),
+          location: this.currentLocation.coordinates,
+          notes: 'Arrival detected automatically',
+          automatic: true
+        });
+        
+        statusChanged = true;
+      }
+    } else {
+      console.log(`⚠️ No auto-detection for delivery - current status: ${this.status}`);
+    }
+  } else if (this.deliveryLocation.arrived) {
+    console.log(`✅ Delivery arrival already detected at: ${this.deliveryLocation.arrivedAt}`);
+  }
+  
+  return statusChanged;
+};
+
+deliveryTrackingSchema.methods.updateStatus = function(newStatus, notes = null, location = null, operationId = null) {
+  return this.atomicUpdate(async () => {
+    const validTransitions = {
+      assigned: ['heading_to_pickup', 'cancelled'],
+      heading_to_pickup: ['at_pickup', 'cancelled'],
+      at_pickup: ['picked_up', 'cancelled'],
+      picked_up: ['heading_to_delivery', 'at_delivery', 'cancelled'],
+      heading_to_delivery: ['at_delivery', 'cancelled'],
+      at_delivery: ['delivered', 'cancelled'],
+      delivered: [],
+      cancelled: []
+    };
     
-    if (distanceToDelivery <= ARRIVAL_THRESHOLD) {
-      this.status = 'at_delivery';
+    if (!validTransitions[this.status]?.includes(newStatus)) {
+      throw new Error(`Cannot transition from ${this.status} to ${newStatus}`);
     }
-  }
+    
+    this.status = newStatus;
+    
+    // Update location if provided (without triggering status change)
+    if (location) {
+      this.updateLocationOnly(location);
+    }
+    
+    // Add status change to history
+    this.statusHistory.push({
+      status: newStatus,
+      timestamp: new Date(),
+      notes: notes || `Estado actualizado a: ${newStatus}`,
+      automatic: false,
+      operationId: operationId || `status_${Date.now()}`
+    });
+    
+    // Update timing fields based on status
+    this.updateTimingFields(newStatus);
+    
+    return this;
+  }, operationId);
 };
 
-deliveryTrackingSchema.methods.updateStatus = function(newStatus, notes = null, location = null) {
-  const validTransitions = {
-    assigned: ['heading_to_pickup', 'cancelled'],
-    heading_to_pickup: ['at_pickup', 'cancelled'],
-    at_pickup: ['picked_up', 'cancelled'],
-    picked_up: ['heading_to_delivery', 'at_delivery', 'cancelled'],
-    heading_to_delivery: ['at_delivery', 'cancelled'],
-    at_delivery: ['delivered', 'cancelled'],
-    delivered: [],
-    cancelled: []
-  };
-  
-  if (!validTransitions[this.status]?.includes(newStatus)) {
-    throw new Error(`Cannot transition from ${this.status} to ${newStatus}`);
-  }
-  
-  this.status = newStatus;
-  
-  if (location) {
-    this.updateLocation(location);
-  }
-  
-  return this.save();
-};
-
-deliveryTrackingSchema.methods.completeDelivery = function(deliveryData = {}) {
-  const { notes, photo, signature } = deliveryData;
-  
-  if (this.status !== 'at_delivery') {
-    throw new Error('Cannot complete delivery unless at delivery location');
-  }
-  
-  this.status = 'delivered';
-  this.deliveryNotes = notes;
-  this.deliveryPhoto = photo;
-  this.customerSignature = signature;
-  
-  return this.save();
+deliveryTrackingSchema.methods.completeDelivery = function(deliveryData = {}, operationId = null) {
+  return this.atomicUpdate(async () => {
+    const { notes, photo, signature } = deliveryData;
+    
+    if (this.status !== 'at_delivery') {
+      throw new Error('Cannot complete delivery unless at delivery location');
+    }
+    
+    this.status = 'delivered';
+    this.deliveryNotes = notes;
+    this.deliveryPhoto = photo;
+    this.customerSignature = signature;
+    
+    // Add completion to history
+    this.statusHistory.push({
+      status: 'delivered',
+      timestamp: new Date(),
+      notes: notes || 'Delivery completed successfully',
+      automatic: false,
+      operationId: operationId || `complete_${Date.now()}`
+    });
+    
+    // Update timing fields
+    this.updateTimingFields('delivered');
+    
+    return this;
+  }, operationId);
 };
 
 // Static methods
@@ -454,7 +675,24 @@ deliveryTrackingSchema.statics.findActiveDeliveries = function(deliveryPersonId 
   }
   
   return this.find(query)
-    .populate('orderId', 'orderNumber total customerId merchantId')
+    .populate({
+      path: 'orderId',
+      select: 'orderNumber total customerId merchantId',
+      populate: [
+        {
+          path: 'customerId',
+          select: 'name phone email'
+        },
+        {
+          path: 'merchantId',
+          select: 'name business',
+          populate: {
+            path: 'business',
+            select: 'businessName'
+          }
+        }
+      ]
+    })
     .populate('deliveryPersonId', 'name phone')
     .sort({ createdAt: -1 });
 };

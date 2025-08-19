@@ -7,6 +7,7 @@ const {
   registerUser,
   getUserProfile,
   updateUserProfile,
+  updateDeliveryAddress,
   resendVerificationCode,
   socialLogin,
   forgotPassword,
@@ -34,7 +35,17 @@ router.post('/reset-password', validate('resetPassword'), resetPassword);
 // RUTAS PROTEGIDAS
 router.get('/user', verifyToken, getUserProfile);
 router.put('/update-profile', verifyToken, updateUserProfile);
+router.put('/delivery-address', verifyToken, updateDeliveryAddress); // Endpoint específico para dirección
 router.post('/verify-password', verifyToken, verifyPassword);
 router.put('/change-password', verifyToken, changePassword);
+
+// Ruta de prueba para delivery-address
+router.get('/test-delivery', verifyToken, (req, res) => {
+  res.json({ 
+    success: true, 
+    message: 'Endpoint de delivery-address funciona',
+    userId: req.user.id 
+  });
+});
 
 module.exports = router;

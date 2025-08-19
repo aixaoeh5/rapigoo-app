@@ -34,16 +34,38 @@ const testUsers = [
     businessAddress: 'Managua, Nicaragua',
     description: 'Restaurante de prueba para testing'
   },
-  // Nota: El rol 'delivery' no existe en el modelo User actual
-  // {
-  //   name: 'Delivery Test',
-  //   email: 'delivery@test.com',
-  //   password: 'test123', 
-  //   role: 'delivery',
-  //   phone: '+505 8888-3333',
-  //   isVerified: true,
-  //   status: 'activo'
-  // },
+  {
+    name: 'Delivery Test',
+    email: 'delivery@test.com',
+    password: 'test123', 
+    role: 'delivery',
+    phone: '+505 8888-3333',
+    isVerified: true,
+    deliveryStatus: 'aprobado',
+    delivery: {
+      vehicleType: 'motocicleta',
+      vehicleModel: 'Honda CBR 150',
+      licensePlate: 'M-123456',
+      licenseNumber: 'D123456789',
+      licenseExpiry: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 año
+      isAvailable: true,
+      currentLocation: {
+        type: 'Point',
+        coordinates: [-69.9312, 18.4861] // Santo Domingo, RD
+      },
+      workZone: {
+        center: [-69.9312, 18.4861],
+        radius: 15 // 15 km de radio
+      },
+      deliveryStats: {
+        totalDeliveries: 0,
+        completedDeliveries: 0,
+        cancelledDeliveries: 0,
+        averageRating: 0,
+        totalEarnings: 0
+      }
+    }
+  },
   {
     name: 'Admin Test',
     email: 'admin@test.com',

@@ -151,6 +151,9 @@ router.get('/admin/all', async (req, res) => {
 // Aplicar autenticación a las demás rutas de pedidos
 router.use(verifyToken);
 
+// Importar controladores de pedidos
+const orderController = require('../controllers/orderController');
+
 // Esquemas de validación para pedidos
 const createOrderSchema = Joi.object({
   merchantId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required().messages({
@@ -196,12 +199,16 @@ const createOrderSchema = Joi.object({
 });
 
 const updateOrderStatusSchema = Joi.object({
-  status: Joi.string().valid('pending', 'confirmed', 'preparing', 'ready', 'assigned', 'picked_up', 'in_transit', 'delivered', 'cancelled').required(),
+  status: Joi.string().valid('pending', 'confirmed', 'preparing', 'ready', 'assigned', 'picked_up', 'in_transit', 'delivered', 'completed', 'cancelled').required(),
   notes: Joi.string().max(500).allow('').optional(),
-  deliveryPersonId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).optional()
+  deliveryPersonId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).optional(),
+  deliveryType: Joi.string().valid('delivery', 'pickup').optional() // NUEVO: Para entrega directa
 });
 
-// POST /api/orders - Crear un nuevo pedido
+// POST /api/orders/checkout - Crear pedido desde carrito (checkout)
+router.post('/checkout', orderController.createOrder);
+
+// POST /api/orders - Crear un nuevo pedido (método directo)
 router.post('/', businessMetricsCollector.orderCreated, async (req, res) => {
   try {
     const { error, value } = createOrderSchema.validate(req.body);
@@ -367,11 +374,17 @@ router.post('/', businessMetricsCollector.orderCreated, async (req, res) => {
 });
 
 // GET /api/orders - Obtener pedidos del usuario
-router.get('/', cachePresets.static, async (req, res) => {
+router.get('/', verifyToken, async (req, res) => {
   try {
-    const { status, type = 'active', page = 1, limit = 20 } = req.query;
+    console.log('📋 GET /api/orders - Inicio del endpoint');
+    console.log('📋 Query params:', req.query);
+    console.log('📋 Usuario:', req.user);
+    
+    const { status, type, page = 1, limit = 20 } = req.query;
     const userType = (req.user.role === 'merchant' || req.user.role === 'comerciante') ? 'merchant' : 
                      req.user.role === 'delivery' ? 'delivery' : 'customer';
+                     
+    console.log('📋 User type determinado:', userType);
 
     let orders;
     const options = {
@@ -384,21 +397,52 @@ router.get('/', cachePresets.static, async (req, res) => {
     } else if (type === 'history') {
       orders = await Order.findOrderHistory(req.user.id, userType, options);
     } else {
-      // Búsqueda personalizada
+      // Búsqueda personalizada o todos los pedidos (por defecto)
       const field = userType === 'customer' ? 'customerId' : 
                     userType === 'merchant' ? 'merchantId' : 'deliveryPersonId';
       
       const query = { [field]: req.user.id };
       if (status) {
-        query.status = status;
+        // FIX: Soportar múltiples estados separados por coma
+        if (status.includes(',')) {
+          const statusArray = status.split(',').map(s => s.trim());
+          query.status = { $in: statusArray };
+          console.log(`🔍 [DEBUG] Búsqueda con múltiples estados:`, statusArray);
+          console.log(`🔍 [DEBUG] Query completa:`, JSON.stringify(query, null, 2));
+        } else {
+          query.status = status;
+          console.log(`🔍 [DEBUG] Búsqueda con estado único:`, status);
+        }
+      } else {
+        console.log(`🔍 [DEBUG] Búsqueda sin filtro de estado`);
       }
+      
+      console.log(`🔍 [DEBUG] Parámetro status recibido:`, status);
+      console.log(`🔍 [DEBUG] Tipo de usuario:`, userType);
+      console.log(`🔍 [DEBUG] Campo de búsqueda:`, field);
+      console.log(`🔍 [DEBUG] ID del usuario:`, req.user.id);
+
+      console.log(`📋 Buscando pedidos para ${userType} con query:`, query);
+      console.log(`📋 Usuario ID: ${req.user.id}`);
 
       orders = await Order.find(query)
-        .populate('customerId merchantId deliveryPersonId', 'name email phone')
+        .populate('customerId', 'name email phone')
+        .populate('merchantId', 'name email phone business')
+        .populate('deliveryPersonId', 'name email phone')
         .populate('items.serviceId', 'name images')
         .sort({ createdAt: -1 })
         .limit(options.limit)
         .skip(options.skip);
+        
+      console.log(`📋 Pedidos encontrados: ${orders.length}`);
+      
+      // DEBUG: Mostrar detalle de pedidos encontrados
+      if (orders.length > 0) {
+        console.log(`🔍 [DEBUG] Primeros 3 pedidos encontrados:`);
+        orders.slice(0, 3).forEach((order, index) => {
+          console.log(`   ${index + 1}. ${order.orderNumber}: estado="${order.status}", delivery=${!!order.deliveryPersonId}`);
+        });
+      }
     }
 
     res.json({
@@ -431,8 +475,8 @@ router.get('/available-for-delivery', verifyToken, async (req, res) => {
     console.log('🚚 Solicitando pedidos disponibles para delivery');
     console.log('🚚 Usuario:', req.user);
 
-    // Solo delivery persons pueden ver estos pedidos
-    if (req.user.role !== 'delivery') {
+    // Solo delivery persons pueden ver estos pedidos (temporal: también comerciantes para pruebas)
+    if (req.user.role !== 'delivery' && req.user.role !== 'comerciante') {
       return res.status(403).json({
         success: false,
         error: {
@@ -442,20 +486,30 @@ router.get('/available-for-delivery', verifyToken, async (req, res) => {
       });
     }
 
-    // Buscar pedidos con status 'ready' que no tengan delivery asignado
+    // Buscar pedidos con status 'preparing', 'ready' o 'assigned' que no tengan delivery asignado o que estén asignados al usuario actual
     const availableOrders = await Order.find({
-      status: 'ready',
       $or: [
-        { deliveryPersonId: null },
-        { deliveryPersonId: { $exists: false } }
+        // Pedidos sin asignar
+        {
+          status: { $in: ['preparing', 'ready'] },
+          $or: [
+            { deliveryPersonId: null },
+            { deliveryPersonId: { $exists: false } }
+          ]
+        },
+        // Pedidos ya asignados al delivery actual
+        {
+          status: 'assigned',
+          deliveryPersonId: req.user.id
+        }
       ]
     })
     .populate('customerId', 'name phone')
-    .populate('merchantId', 'name business.businessName business.address business.phone')
+    .populate('merchantId', 'name business.businessName business.address business.phone business.location business.pickupAddress')
     .sort({ createdAt: -1 })
     .limit(20);
 
-    console.log(`🚚 Encontrados ${availableOrders.length} pedidos disponibles`);
+    console.log(`🚚 Encontrados ${availableOrders.length} pedidos disponibles (preparing + ready + assigned to current user)`);
 
     // Formatear los datos para que sean consistentes con el formato esperado
     const formattedOrders = availableOrders.map(order => {
@@ -475,6 +529,14 @@ router.get('/available-for-delivery', verifyToken, async (req, res) => {
           address: order.deliveryInfo?.address || 'Dirección no disponible',
           coordinates: order.deliveryInfo?.coordinates || [],
           instructions: order.deliveryInfo?.instructions || ''
+        },
+        // Información del comercio para pickup
+        merchantInfo: {
+          name: order.merchantId?.business?.businessName || order.merchantId?.name || 'Comercio',
+          phone: order.merchantId?.business?.phone || 'N/A',
+          address: order.merchantId?.business?.address || 'Dirección no disponible',
+          location: order.merchantId?.business?.location || null,
+          pickupAddress: order.merchantId?.business?.pickupAddress || null
         },
         paymentMethod: order.paymentMethod || 'N/A',
         createdAt: order.createdAt,
@@ -629,6 +691,23 @@ router.put('/:id/status', verifyToken, /* invalidateCache(['api:orders:*']), */ 
         }
       });
     }
+    
+    // NUEVA VALIDACIÓN: No permitir marcar como completado sin delivery asignado
+    if (status === 'completed' && (req.user.role === 'merchant' || req.user.role === 'comerciante')) {
+      // Verificar si es entrega directa (pickup) o si necesita delivery
+      const isDirectPickup = req.body.deliveryType === 'pickup';
+      
+      if (!isDirectPickup && !order.deliveryPersonId) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: 'No se puede marcar como entregado sin asignar un repartidor. Use "deliveryType: pickup" para entregas directas.',
+            code: 'NO_DELIVERY_ASSIGNED',
+            suggestion: 'Asigne un repartidor o marque como entrega directa (pickup)'
+          }
+        });
+      }
+    }
 
     // Actualizar estado
     console.log('📝 Actualizando estado del pedido:', {
@@ -641,8 +720,51 @@ router.put('/:id/status', verifyToken, /* invalidateCache(['api:orders:*']), */ 
     try {
       await order.updateStatus(status, notes, req.user.id);
       console.log('✅ Estado actualizado correctamente');
+      
+      // FIX: Sincronizar DeliveryTracking cuando el comerciante actualiza el estado
+      if (order.deliveryPersonId && ['at_pickup', 'picked_up', 'in_transit', 'delivered'].includes(status)) {
+        try {
+          const DeliveryTracking = require('../models/DeliveryTracking');
+          const deliveryTracking = await DeliveryTracking.findOne({ orderId: order._id });
+          
+          if (deliveryTracking) {
+            const previousDeliveryStatus = deliveryTracking.status;
+            deliveryTracking.status = status;
+            deliveryTracking.updatedAt = new Date();
+            
+            // Agregar al historial si existe
+            if (deliveryTracking.statusHistory) {
+              deliveryTracking.statusHistory.push({
+                status: status,
+                timestamp: new Date(),
+                description: `Estado sincronizado desde Order por ${req.user.role}: ${order.status} → ${status}`
+              });
+            }
+            
+            await deliveryTracking.save();
+            console.log(`🔄 DeliveryTracking sincronizado: ${previousDeliveryStatus} → ${status}`);
+          }
+        } catch (syncError) {
+          console.error('⚠️ Error sincronizando DeliveryTracking (no crítico):', syncError);
+          // No fallar la operación principal por esto
+        }
+      }
+      
     } catch (updateError) {
       console.error('❌ Error en updateStatus:', updateError);
+      
+      // Manejar conflictos de concurrencia específicamente
+      if (updateError.name === 'ConcurrencyConflictError') {
+        return res.status(409).json({
+          success: false,
+          error: {
+            message: updateError.message,
+            code: 'CONCURRENCY_CONFLICT',
+            currentVersion: updateError.currentVersion
+          }
+        });
+      }
+      
       throw updateError;
     }
 
@@ -884,7 +1006,17 @@ router.get('/merchant/list', verifyToken, async (req, res) => {
     // Construir query para pedidos del comerciante
     const query = { merchantId: req.user.id };
     if (status && status !== 'all') {
-      query.status = status;
+      // FIX: Manejar múltiples estados separados por coma
+      if (status.includes(',')) {
+        const statusArray = status.split(',').map(s => s.trim());
+        query.status = { $in: statusArray };
+        console.log('🔍 [DEBUG BACKEND] Filtro compuesto:', { statusArray, query });
+      } else {
+        query.status = status;
+        console.log('🔍 [DEBUG BACKEND] Filtro simple:', { status, query });
+      }
+    } else {
+      console.log('🔍 [DEBUG BACKEND] Sin filtro de estado (todos)');
     }
 
     const orders = await Order.find(query)
@@ -893,6 +1025,12 @@ router.get('/merchant/list', verifyToken, async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(parseInt(limit))
       .skip((parseInt(page) - 1) * parseInt(limit));
+
+    console.log('🔍 [DEBUG BACKEND] Resultados encontrados:', {
+      totalFound: orders.length,
+      orderNumbers: orders.map(o => o.orderNumber),
+      statuses: orders.map(o => o.status)
+    });
 
     res.json({
       success: true,
@@ -916,7 +1054,7 @@ router.get('/merchant/list', verifyToken, async (req, res) => {
   }
 });
 
-// GET /api/orders/stats/merchant - Estadísticas del comerciante
+// GET /api/orders/stats/merchant - Estadísticas completas del comerciante
 router.get('/stats/merchant', async (req, res) => {
   try {
     // Solo comerciantes pueden ver sus estadísticas
@@ -930,26 +1068,171 @@ router.get('/stats/merchant', async (req, res) => {
       });
     }
 
-    const { startDate, endDate } = req.query;
-    const dateRange = {};
+    const { period = 'month' } = req.query;
+    const merchantId = req.user.id;
     
-    if (startDate) dateRange.startDate = startDate;
-    if (endDate) dateRange.endDate = endDate;
+    // Calcular rango de fechas según el período
+    let startDate = new Date();
+    const endDate = new Date();
+    
+    switch (period) {
+      case 'week':
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case 'month':
+        startDate.setMonth(startDate.getMonth() - 1);
+        break;
+      case 'year':
+        startDate.setFullYear(startDate.getFullYear() - 1);
+        break;
+      default:
+        startDate.setMonth(startDate.getMonth() - 1);
+    }
 
-    const stats = await Order.getOrderStats(req.user.id, dateRange);
+    // Consultas para estadísticas básicas
+    const [
+      totalOrdersResult,
+      totalRevenueResult,
+      completedOrdersResult,
+      cancelledOrdersResult,
+      recentOrders,
+      topServices,
+      monthlyStats
+    ] = await Promise.all([
+      // Total de pedidos en el período
+      Order.countDocuments({
+        merchantId,
+        createdAt: { $gte: startDate, $lte: endDate }
+      }),
+      
+      // Ingresos totales (pedidos completados)
+      Order.aggregate([
+        {
+          $match: {
+            merchantId: new require('mongoose').Types.ObjectId(merchantId),
+            status: { $in: ['delivered', 'completed'] },
+            createdAt: { $gte: startDate, $lte: endDate }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: { $sum: '$total' }
+          }
+        }
+      ]),
+      
+      // Pedidos completados
+      Order.countDocuments({
+        merchantId,
+        status: { $in: ['delivered', 'completed'] },
+        createdAt: { $gte: startDate, $lte: endDate }
+      }),
+      
+      // Pedidos cancelados
+      Order.countDocuments({
+        merchantId,
+        status: 'cancelled',
+        createdAt: { $gte: startDate, $lte: endDate }
+      }),
+      
+      // Pedidos recientes (últimos 10)
+      Order.find({
+        merchantId,
+        createdAt: { $gte: startDate, $lte: endDate }
+      })
+      .select('orderNumber total status createdAt')
+      .sort({ createdAt: -1 })
+      .limit(10),
+      
+      // Servicios más populares
+      Order.aggregate([
+        {
+          $match: {
+            merchantId: new require('mongoose').Types.ObjectId(merchantId),
+            createdAt: { $gte: startDate, $lte: endDate }
+          }
+        },
+        { $unwind: '$items' },
+        {
+          $group: {
+            _id: '$items.name',
+            orders: { $sum: '$items.quantity' },
+            revenue: { $sum: '$items.subtotal' }
+          }
+        },
+        { $sort: { orders: -1 } },
+        { $limit: 5 }
+      ]),
+      
+      // Estadísticas mensuales (últimos 3 meses)
+      Order.aggregate([
+        {
+          $match: {
+            merchantId: new require('mongoose').Types.ObjectId(merchantId),
+            createdAt: { $gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) }
+          }
+        },
+        {
+          $group: {
+            _id: {
+              year: { $year: '$createdAt' },
+              month: { $month: '$createdAt' }
+            },
+            orders: { $sum: 1 },
+            revenue: { 
+              $sum: { 
+                $cond: [
+                  { $in: ['$status', ['delivered', 'completed']] }, 
+                  '$total', 
+                  0
+                ] 
+              }
+            }
+          }
+        },
+        { $sort: { '_id.year': -1, '_id.month': -1 } },
+        { $limit: 3 }
+      ])
+    ]);
+
+    const totalRevenue = totalRevenueResult[0]?.totalRevenue || 0;
+    const averageOrderValue = completedOrdersResult > 0 ? totalRevenue / completedOrdersResult : 0;
+
+    // Calcular rating promedio (simulado por ahora)
+    const rating = 4.6; // En un sistema real, esto vendría de las reseñas
+    const totalReviews = Math.floor(completedOrdersResult * 0.7); // 70% de clientes dejan reseña
+
+    // Formatear datos
+    const analytics = {
+      totalOrders: totalOrdersResult,
+      totalRevenue: totalRevenue,
+      averageOrderValue: averageOrderValue,
+      completedOrders: completedOrdersResult,
+      cancelledOrders: cancelledOrdersResult,
+      rating: rating,
+      totalReviews: totalReviews,
+      topServices: topServices.map(service => ({
+        name: service._id,
+        orders: service.orders,
+        revenue: service.revenue
+      })),
+      recentOrders: recentOrders.map(order => ({
+        orderNumber: order.orderNumber,
+        total: order.total,
+        status: order.status,
+        date: order.createdAt.toISOString().split('T')[0]
+      })),
+      monthlyStats: monthlyStats.map(stat => ({
+        period: `${getMonthName(stat._id.month)} ${stat._id.year}`,
+        orders: stat.orders,
+        revenue: stat.revenue
+      }))
+    };
 
     res.json({
       success: true,
-      data: {
-        stats: stats[0] || {
-          totalOrders: 0,
-          totalRevenue: 0,
-          averageOrderValue: 0,
-          deliveredOrders: 0,
-          cancelledOrders: 0,
-          fulfillmentRate: 0
-        }
-      }
+      analytics
     });
 
   } catch (error) {
@@ -963,6 +1246,15 @@ router.get('/stats/merchant', async (req, res) => {
     });
   }
 });
+
+// Función auxiliar para obtener nombre del mes
+function getMonthName(monthNumber) {
+  const months = [
+    'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+    'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'
+  ];
+  return months[monthNumber - 1];
+}
 
 // GET /api/orders/:id/tracking - Obtener tracking del pedido
 router.get('/:id/tracking', cachePresets.static, async (req, res) => {
@@ -1087,5 +1379,121 @@ router.post('/test', verifyToken, async (req, res) => {
     });
   }
 });
+
+// PUT /api/orders/:id/confirm-arrival - Confirmar llegada del delivery al comercio
+router.put('/:id/confirm-arrival', verifyToken, async (req, res) => {
+  try {
+    const { latitude, longitude } = req.body;
+    
+    // Verificar que es un delivery
+    if (req.user.role !== 'delivery') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          message: 'Solo los delivery pueden confirmar llegada',
+          code: 'ACCESS_DENIED'
+        }
+      });
+    }
+
+    const order = await Order.findById(req.params.id)
+      .populate('merchantId', 'business.location business.pickupAddress');
+    
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          message: 'Pedido no encontrado',
+          code: 'ORDER_NOT_FOUND'
+        }
+      });
+    }
+
+    // Verificar que el delivery está asignado a este pedido
+    if (!order.deliveryPersonId || order.deliveryPersonId.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          message: 'No tienes permisos para este pedido',
+          code: 'ACCESS_DENIED'
+        }
+      });
+    }
+
+    // Verificar que el pedido está en estado 'assigned'
+    if (order.status !== 'assigned') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          message: 'El pedido debe estar en estado asignado',
+          code: 'INVALID_ORDER_STATUS'
+        }
+      });
+    }
+
+    // Verificar proximidad al comercio (si el comercio tiene ubicación configurada)
+    let proximityCheck = { isNear: false, distance: null };
+    
+    if (order.merchantId?.business?.location?.coordinates && latitude && longitude) {
+      const merchantCoords = order.merchantId.business.location.coordinates;
+      const deliveryCoords = [longitude, latitude];
+      
+      // Calcular distancia usando fórmula haversine simplificada
+      const distance = calculateDistance(
+        merchantCoords[1], merchantCoords[0], // merchant lat, lng
+        latitude, longitude // delivery lat, lng
+      );
+      
+      proximityCheck = {
+        isNear: distance <= 0.1, // 100 metros
+        distance: distance
+      };
+    }
+
+    // Actualizar ubicación actual del delivery
+    await User.findByIdAndUpdate(req.user.id, {
+      $set: {
+        'delivery.currentLocation.coordinates': [longitude, latitude]
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Ubicación del delivery actualizada',
+      data: {
+        orderId: order._id,
+        proximityCheck,
+        merchantLocation: order.merchantId?.business?.location,
+        canProceedToPickup: proximityCheck.isNear
+      }
+    });
+
+  } catch (error) {
+    console.error('Error confirming delivery arrival:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        message: 'Error interno del servidor',
+        code: 'INTERNAL_SERVER_ERROR'
+      }
+    });
+  }
+});
+
+// Función auxiliar para calcular distancia entre dos puntos geográficos
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Radio de la Tierra en kilómetros
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; // Distancia en kilómetros
+}
+
+function toRadians(degrees) {
+  return degrees * (Math.PI / 180);
+}
 
 module.exports = router;

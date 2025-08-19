@@ -1,10 +1,9 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import {
   View,
   Text,
   FlatList,
   StyleSheet,
-  Image,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
@@ -13,20 +12,60 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { getMyServices } from '../api/serviceApi';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { getStatusBarHeight } from 'react-native-status-bar-height';
+import LazyImage from './shared/LazyImage';
+import LoadingState from './shared/LoadingState';
+import ErrorState from './shared/ErrorState';
+import EmptyState from './shared/EmptyState';
+
+// Memoized ServiceItem component
+const ServiceItem = memo(({ item, onPress }) => (
+  <TouchableOpacity
+    style={styles.card}
+    onPress={() => onPress(item)}
+  >
+    <LazyImage
+      source={{ uri: item.image }}
+      style={styles.image}
+      resizeMode="cover"
+      showLoader={true}
+      fadeDuration={200}
+    />
+    <View style={styles.info}>
+      <Text style={styles.title}>{item.title}</Text>
+      <Text style={styles.price}>${item.price.toFixed(2)}</Text>
+    </View>
+    <Icon
+      name="create-outline"
+      size={22}
+      color="black"
+      style={styles.editIcon}
+    />
+  </TouchableOpacity>
+), (prevProps, nextProps) => {
+  return (
+    prevProps.item._id === nextProps.item._id &&
+    prevProps.item.title === nextProps.item.title &&
+    prevProps.item.price === nextProps.item.price &&
+    prevProps.item.image === nextProps.item.image
+  );
+});
 
 const ServicesScreen = () => {
   const navigation = useNavigation();
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const statusBarHeight = getStatusBarHeight();
 
   const loadServices = async () => {
     setLoading(true);
+    setError(null);
     try {
       const data = await getMyServices();
       setServices(data);
-    } catch (error) {
-      Alert.alert('Error', error.message || 'No se pudieron cargar los servicios');
+    } catch (err) {
+      setError(err.message || 'No se pudieron cargar los servicios');
+      console.error('Error loading services:', err);
     } finally {
       setLoading(false);
     }
@@ -38,28 +77,15 @@ const ServicesScreen = () => {
     }, [])
   );
 
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => navigation.navigate('AddService', { service: item })}
-    >
-      <Image
-        source={{ uri: item.image }}
-        style={styles.image}
-        resizeMode="cover"
-      />
-      <View style={styles.info}>
-        <Text style={styles.title}>{item.title}</Text>
-        <Text style={styles.price}>${item.price.toFixed(2)}</Text>
-      </View>
-      <Icon
-        name="create-outline"
-        size={22}
-        color="black"
-        style={styles.editIcon}
-      />
-    </TouchableOpacity>
-  );
+  const handleServicePress = useCallback((service) => {
+    navigation.navigate('AddService', { service });
+  }, [navigation]);
+
+  const renderItem = useCallback(({ item }) => (
+    <ServiceItem item={item} onPress={handleServicePress} />
+  ), [handleServicePress]);
+
+  const keyExtractor = useCallback((item) => item._id, []);
 
   return (
     <View style={[styles.container, { paddingTop: statusBarHeight }]}>
@@ -77,15 +103,26 @@ const ServicesScreen = () => {
       </TouchableOpacity>
 
       {loading ? (
-        <ActivityIndicator size="large" style={styles.loader} />
+        <LoadingState message="Cargando servicios..." />
+      ) : error ? (
+        <ErrorState
+          title="Error cargando servicios"
+          message={error}
+          onRetry={loadServices}
+        />
       ) : services.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No tienes servicios aún.</Text>
-        </View>
+        <EmptyState
+          title="No tienes servicios"
+          message="Agrega tu primer servicio para comenzar a recibir pedidos"
+          icon="restaurant-outline"
+          showAction={true}
+          actionText="Agregar Servicio"
+          onAction={() => navigation.navigate('AddService')}
+        />
       ) : (
         <FlatList
           data={services}
-          keyExtractor={item => item._id}
+          keyExtractor={keyExtractor}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
         />

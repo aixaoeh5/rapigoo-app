@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { ORDER_STATUS, CURRENCY } = require('../utils/statusConstants');
 
 const orderItemSchema = new mongoose.Schema({
   serviceId: {
@@ -102,8 +103,8 @@ const paymentInfoSchema = new mongoose.Schema({
 const orderTrackingSchema = new mongoose.Schema({
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'preparing', 'ready', 'assigned', 'picked_up', 'in_transit', 'delivered', 'cancelled'],
-    default: 'pending'
+    enum: Object.values(ORDER_STATUS),
+    default: ORDER_STATUS.PENDING
   },
   timestamp: {
     type: Date,
@@ -191,8 +192,8 @@ const orderSchema = new mongoose.Schema({
   // Order details
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'preparing', 'ready', 'assigned', 'picked_up', 'in_transit', 'delivered', 'cancelled'],
-    default: 'pending'
+    enum: Object.values(ORDER_STATUS),
+    default: ORDER_STATUS.PENDING
   },
   deliveryInfo: deliveryInfoSchema,
   paymentInfo: paymentInfoSchema,
@@ -249,11 +250,19 @@ const orderSchema = new mongoose.Schema({
     enum: ['mobile', 'web'],
     default: 'mobile'
   },
-  deviceInfo: String
+  deviceInfo: String,
+  
+  // Version field for optimistic locking
+  __v: {
+    type: Number,
+    default: 0
+  }
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
-  toObject: { virtuals: true }
+  toObject: { virtuals: true },
+  // Enable optimistic concurrency by default
+  optimisticConcurrency: true
 });
 
 // Indexes for better performance
@@ -343,6 +352,9 @@ orderSchema.pre('save', function(next) {
       case 'delivered':
         this.deliveredAt = new Date();
         this.deliveryInfo.actualDeliveryTime = new Date();
+        
+        // Programar actualización de estadísticas después de guardar
+        this._shouldUpdateStats = true;
         break;
       case 'cancelled':
         this.cancelledAt = new Date();
@@ -353,6 +365,20 @@ orderSchema.pre('save', function(next) {
   next();
 });
 
+// Post-save middleware para actualizar estadísticas cuando se completa un pedido
+orderSchema.post('save', async function(doc) {
+  if (doc._shouldUpdateStats && doc.status === 'delivered') {
+    // Usar setImmediate para ejecutar después del response
+    setImmediate(async () => {
+      try {
+        await this.constructor.updateAllStatsOnDelivery(doc._id);
+      } catch (error) {
+        console.error('❌ Error en post-save stats update:', error);
+      }
+    });
+  }
+});
+
 // Instance methods
 orderSchema.methods.getStatusDescription = function(status) {
   const descriptions = {
@@ -361,6 +387,7 @@ orderSchema.methods.getStatusDescription = function(status) {
     preparing: 'Preparando tu pedido',
     ready: 'Pedido listo para recolectar',
     assigned: 'Delivery asignado',
+    at_pickup: 'Delivery llegó al restaurante',
     picked_up: 'Pedido recolectado por el delivery',
     in_transit: 'En camino hacia tu ubicación',
     delivered: 'Pedido entregado',
@@ -375,8 +402,9 @@ orderSchema.methods.canTransitionTo = function(newStatus) {
     confirmed: ['preparing', 'cancelled'],
     preparing: ['ready', 'cancelled'],
     ready: ['assigned', 'cancelled'],
-    assigned: ['picked_up', 'cancelled'],
-    picked_up: ['in_transit'],
+    assigned: ['at_pickup', 'picked_up', 'delivered', 'cancelled'], // Permitir transición a at_pickup
+    at_pickup: ['picked_up', 'delivered', 'cancelled'], // Delivery llegó, comerciante puede entregar
+    picked_up: ['in_transit', 'delivered'], // Permitir salto directo a delivered
     in_transit: ['delivered'],
     delivered: [],
     cancelled: []
@@ -385,10 +413,13 @@ orderSchema.methods.canTransitionTo = function(newStatus) {
   return validTransitions[this.status]?.includes(newStatus) || false;
 };
 
-orderSchema.methods.updateStatus = function(newStatus, description = null, updatedBy = null) {
+orderSchema.methods.updateStatus = async function(newStatus, description = null, updatedBy = null) {
   if (!this.canTransitionTo(newStatus)) {
     throw new Error(`Cannot transition from ${this.status} to ${newStatus}`);
   }
+  
+  const currentVersion = this.__v;
+  const previousStatus = this.status;
   
   this.status = newStatus;
   
@@ -399,7 +430,22 @@ orderSchema.methods.updateStatus = function(newStatus, description = null, updat
     updatedBy: updatedBy
   };
   
-  return this.save();
+  try {
+    // Intentar guardar con optimistic locking
+    const result = await this.save();
+    console.log(`✅ Status updated: ${previousStatus} → ${newStatus} (v${currentVersion} → v${this.__v})`);
+    return result;
+  } catch (error) {
+    // Manejar conflictos de versión
+    if (error.name === 'VersionError') {
+      const conflictError = new Error(`Concurrent modification detected. Order was modified by another process. Please refresh and try again.`);
+      conflictError.name = 'ConcurrencyConflictError';
+      conflictError.code = 'CONCURRENCY_CONFLICT';
+      conflictError.currentVersion = currentVersion;
+      throw conflictError;
+    }
+    throw error;
+  }
 };
 
 orderSchema.methods.calculateDeliveryTime = function() {
@@ -433,9 +479,14 @@ orderSchema.statics.findActiveOrders = function(userId, userType = 'customer') {
   const field = userType === 'customer' ? 'customerId' : 
                 userType === 'merchant' ? 'merchantId' : 'deliveryPersonId';
   
+  // Estados considerados activos (NO finalizados)
+  const activeStatuses = ['pending', 'confirmed', 'preparing', 'ready', 'assigned', 'picked_up', 'in_transit'];
+  // Estados finalizados que NO deben aparecer en activos
+  const finishedStatuses = ['delivered', 'cancelled'];
+  
   return this.find({
     [field]: userId,
-    status: { $in: ['pending', 'confirmed', 'preparing', 'ready', 'assigned', 'picked_up', 'in_transit'] }
+    status: { $nin: finishedStatuses }  // Excluir estados finalizados
   }).populate('customerId merchantId deliveryPersonId', 'name email phone')
     .populate('items.serviceId', 'name images')
     .sort({ createdAt: -1 });
@@ -496,6 +547,132 @@ orderSchema.statics.getOrderStats = function(merchantId, dateRange = {}) {
       }
     }
   ]);
+};
+
+// Método para actualizar estadísticas del delivery cuando se entrega un pedido
+orderSchema.statics.updateDeliveryStats = async function(orderId) {
+  try {
+    const order = await this.findById(orderId);
+    if (!order || order.status !== 'delivered' || !order.deliveryPersonId) {
+      return; // Solo actualizar si la orden está delivered y tiene delivery asignado
+    }
+
+    const User = require('./User');
+    const delivery = await User.findById(order.deliveryPersonId);
+    if (!delivery || delivery.role !== 'delivery') {
+      return;
+    }
+
+    // Inicializar delivery object si no existe
+    if (!delivery.delivery) {
+      delivery.delivery = {};
+    }
+
+    // Inicializar deliveryStats si no existen
+    if (!delivery.delivery.deliveryStats) {
+      delivery.delivery.deliveryStats = {
+        totalDeliveries: 0,
+        completedDeliveries: 0,
+        cancelledDeliveries: 0,
+        averageRating: 0,
+        totalEarnings: 0
+      };
+    }
+
+    // Calcular ganancias del delivery (asumiendo 10% del total del pedido)
+    const deliveryEarnings = Math.round((order.total || 0) * 0.1);
+
+    // Actualizar estadísticas del delivery
+    delivery.delivery.deliveryStats.totalDeliveries += 1;
+    delivery.delivery.deliveryStats.completedDeliveries += 1;
+    delivery.delivery.deliveryStats.totalEarnings += deliveryEarnings;
+
+    await delivery.save();
+    console.log(`✅ Estadísticas actualizadas para delivery ${delivery.name} - Ganancias: RD$${deliveryEarnings}`);
+    
+  } catch (error) {
+    console.error('❌ Error actualizando estadísticas del delivery:', error);
+  }
+};
+
+// Método para actualizar estadísticas del merchant cuando se entrega un pedido
+orderSchema.statics.updateMerchantStats = async function(orderId) {
+  try {
+    const order = await this.findById(orderId);
+    if (!order || order.status !== 'delivered') {
+      return; // Solo actualizar si la orden está delivered
+    }
+
+    const User = require('./User');
+    const merchant = await User.findById(order.merchantId);
+    if (!merchant || merchant.role !== 'comerciante') {
+      return;
+    }
+
+    // Inicializar stats si no existen
+    if (!merchant.business.stats) {
+      merchant.business.stats = {
+        totalOrders: 0,
+        completedOrders: 0,
+        cancelledOrders: 0,
+        totalRevenue: 0,
+        averageOrderValue: 0,
+        averageRating: 0,
+        totalReviews: 0,
+        thisWeekOrders: 0,
+        thisMonthOrders: 0,
+        lastStatsUpdate: new Date()
+      };
+    }
+
+    // Verificar si esta orden ya fue contada (evitar duplicados)
+    const currentDate = new Date();
+    const weekStart = new Date(currentDate.setDate(currentDate.getDate() - currentDate.getDay()));
+    const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+
+    // Actualizar estadísticas
+    merchant.business.stats.totalOrders += 1;
+    merchant.business.stats.completedOrders += 1;
+    merchant.business.stats.totalRevenue += order.total || 0;
+    
+    // Calcular nuevo promedio de valor de orden
+    merchant.business.stats.averageOrderValue = 
+      merchant.business.stats.totalRevenue / merchant.business.stats.totalOrders;
+
+    // Incrementar contadores de semana y mes si la orden es reciente
+    if (order.placedAt >= weekStart) {
+      merchant.business.stats.thisWeekOrders += 1;
+    }
+    if (order.placedAt >= monthStart) {
+      merchant.business.stats.thisMonthOrders += 1;
+    }
+
+    merchant.business.stats.lastStatsUpdate = new Date();
+
+    await merchant.save();
+    console.log(`✅ Estadísticas actualizadas para merchant ${merchant.business.businessName}`);
+    
+  } catch (error) {
+    console.error('❌ Error actualizando estadísticas del merchant:', error);
+  }
+};
+
+// Método maestro para actualizar todas las estadísticas cuando se completa un pedido
+orderSchema.statics.updateAllStatsOnDelivery = async function(orderId) {
+  console.log(`📊 Actualizando estadísticas para pedido completado: ${orderId}`);
+  
+  try {
+    // Actualizar estadísticas del comerciante
+    await this.updateMerchantStats(orderId);
+    
+    // Actualizar estadísticas del delivery
+    await this.updateDeliveryStats(orderId);
+    
+    console.log(`✅ Todas las estadísticas actualizadas para pedido ${orderId}`);
+    
+  } catch (error) {
+    console.error('❌ Error actualizando estadísticas completas:', error);
+  }
 };
 
 module.exports = mongoose.model('Order', orderSchema);

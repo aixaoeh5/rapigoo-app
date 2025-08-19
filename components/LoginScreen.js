@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -14,30 +15,67 @@ import { getStatusBarHeight } from 'react-native-status-bar-height';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loginUser } from '../api/auth';
 import { useTheme } from './context/ThemeContext';
+import LoadingState from './shared/LoadingState';
+import ValidatedInput from './shared/ValidatedInput';
+import useFormValidation from '../hooks/useFormValidation';
 // import SocialLogin from './shared/SocialLogin';
 
 const LoginScreen = () => {
   const navigation = useNavigation();
   const { theme } = useTheme();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const statusBarHeight = getStatusBarHeight();
+
+  // Form validation setup
+  const {
+    values,
+    errors,
+    touched,
+    isValid,
+    handleChange,
+    handleBlur,
+    validateAll,
+  } = useFormValidation(
+    {
+      email: '',
+      password: '',
+    },
+    {
+      email: ['required', 'email'],
+      password: ['required', { type: 'minLength', params: 6 }],
+    }
+  );
 
   useEffect(() => {
     const checkToken = async () => {
-      const token = await AsyncStorage.getItem('token');
-      if (token) {
-        console.log('🔓 Token ya existe, navegando a Home');
-        navigation.navigate('Home');
+      try {
+        const token = await AsyncStorage.getItem('token');
+        if (token) {
+          console.log('🔓 Token ya existe, navegando a Home');
+          navigation.replace('Home');
+        }
+      } catch (error) {
+        console.error('Error checking token:', error);
+      } finally {
+        setInitialLoading(false);
       }
     };
     checkToken();
-  }, []);
+  }, []); // Remove navigation from dependencies to prevent re-renders
 
   const handleLogin = async () => {
+    if (!validateAll()) {
+      Alert.alert('Error', 'Por favor, corrige los errores en el formulario');
+      return;
+    }
+
     try {
-      const user = await loginUser({ email, password });
+      setLoading(true);
+      const user = await loginUser({ 
+        email: values.email, 
+        password: values.password 
+      });
       console.log('🪪 Usuario logueado:', user);
       navigation.navigate('Home');
     } catch (error) {
@@ -49,6 +87,8 @@ const LoginScreen = () => {
         'Error',
         error.response?.data?.message || 'Error al iniciar sesión'
       );
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -97,6 +137,10 @@ const LoginScreen = () => {
       alignItems: 'center',
       marginTop: 10,
     },
+    buttonDisabled: {
+      backgroundColor: '#ccc',
+      opacity: 0.6,
+    },
     buttonText: {
       color: 'white',
       fontSize: 16,
@@ -128,30 +172,53 @@ const LoginScreen = () => {
     },
   });
 
+  if (initialLoading) {
+    return (
+      <LoadingState 
+        message="Verificando sesión..." 
+        color={theme.colors.primary}
+      />
+    );
+  }
+
   return (
     <View style={[styles.container, { paddingTop: statusBarHeight }]}>
-<TouchableOpacity style={styles.backButton} onPress={() => navigation.navigate('UserType')}>
-  <Icon name="chevron-back" size={26} color={theme.colors.text} />
-</TouchableOpacity>
+      <TouchableOpacity 
+        style={styles.backButton} 
+        onPress={() => navigation.navigate('UserType')}
+        disabled={loading}
+      >
+        <Icon name="chevron-back" size={26} color={theme.colors.text} />
+      </TouchableOpacity>
 
       <Text style={styles.title}>Bienvenido de nuevo</Text>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
+      <ValidatedInput
+        label="Email"
+        placeholder="Ingresa tu email"
         keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-        placeholderTextColor={theme.colors.textTertiary}
+        value={values.email}
+        onChangeText={(value) => handleChange('email', value)}
+        onBlur={() => handleBlur('email')}
+        error={errors.email}
+        touched={touched.email}
+        autoCapitalize="none"
+        leftIcon={<Icon name="mail-outline" size={20} color={theme.colors.textSecondary} />}
+        required
       />
 
-      <TextInput
-        style={styles.input}
-        placeholder="Contraseña"
+      <ValidatedInput
+        label="Contraseña"
+        placeholder="Ingresa tu contraseña"
         secureTextEntry={true}
-        value={password}
-        onChangeText={setPassword}
-        placeholderTextColor={theme.colors.textTertiary}
+        value={values.password}
+        onChangeText={(value) => handleChange('password', value)}
+        onBlur={() => handleBlur('password')}
+        error={errors.password}
+        touched={touched.password}
+        showPasswordToggle={true}
+        leftIcon={<Icon name="lock-closed-outline" size={20} color={theme.colors.textSecondary} />}
+        required
       />
 
       <TouchableOpacity
@@ -162,8 +229,27 @@ const LoginScreen = () => {
       </TouchableOpacity>
 
 
-      <TouchableOpacity style={styles.button} onPress={handleLogin}>
-        <Text style={styles.buttonText}>Iniciar Sesión</Text>
+      <TouchableOpacity 
+        style={[
+          styles.button, 
+          (loading || !isValid) && styles.buttonDisabled
+        ]} 
+        onPress={handleLogin}
+        disabled={loading || !isValid}
+      >
+        {loading ? (
+          <ActivityIndicator size="small" color="#fff" />
+        ) : (
+          <Text style={styles.buttonText}>Iniciar Sesión</Text>
+        )}
+      </TouchableOpacity>
+
+      {/* Debug button - TEMPORARY */}
+      <TouchableOpacity 
+        style={[styles.button, { backgroundColor: '#ff6b6b', marginTop: 10 }]} 
+        onPress={() => navigation.navigate('NetworkDebug')}
+      >
+        <Text style={styles.buttonText}>🔍 Network Debug Tool</Text>
       </TouchableOpacity>
 
       <Text style={styles.grayText}>¿No tienes una cuenta?</Text>

@@ -285,6 +285,10 @@ const cachePresets = {
   
   static: cache({
     ttl: 3600
+  }),
+  
+  short: cache({
+    ttl: 60
   })
 };
 

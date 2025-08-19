@@ -351,6 +351,72 @@ const getPublicMerchantProfile = async (req, res) => {
   }
 };
 
+// ACTUALIZAR UBICACIÓN DEL NEGOCIO
+const updateBusinessLocation = async (req, res) => {
+  try {
+    const { latitude, longitude, pickupAddress } = req.body;
+
+    // Validar coordenadas
+    if (!latitude || !longitude) {
+      return res.status(400).json({
+        success: false,
+        message: 'Las coordenadas de latitud y longitud son requeridas'
+      });
+    }
+
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+      return res.status(400).json({
+        success: false,
+        message: 'Las coordenadas no son válidas'
+      });
+    }
+
+    // Actualizar la ubicación del negocio
+    const updateData = {
+      'business.location.coordinates': [longitude, latitude],
+      'business.location.type': 'Point'
+    };
+
+    // Si se proporciona información de dirección de pickup, actualizarla también
+    if (pickupAddress) {
+      if (pickupAddress.street) updateData['business.pickupAddress.street'] = pickupAddress.street;
+      if (pickupAddress.city) updateData['business.pickupAddress.city'] = pickupAddress.city;
+      if (pickupAddress.state) updateData['business.pickupAddress.state'] = pickupAddress.state;
+      if (pickupAddress.zipCode) updateData['business.pickupAddress.zipCode'] = pickupAddress.zipCode;
+      if (pickupAddress.landmarks) updateData['business.pickupAddress.landmarks'] = pickupAddress.landmarks;
+      if (pickupAddress.instructions) updateData['business.pickupAddress.instructions'] = pickupAddress.instructions;
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.id,
+      { $set: updateData },
+      { new: true, runValidators: true }
+    ).select('business.location business.pickupAddress');
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuario no encontrado'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Ubicación del negocio actualizada exitosamente',
+      data: {
+        location: updatedUser.business.location,
+        pickupAddress: updatedUser.business.pickupAddress
+      }
+    });
+
+  } catch (error) {
+    console.error('Error updating business location:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor'
+    });
+  }
+};
 
 module.exports = {
   registerMerchant,
@@ -363,4 +429,5 @@ module.exports = {
   getMerchantsByCategory, 
   getAllMerchantsForAdmin,
   getPublicMerchantProfile,
+  updateBusinessLocation,
 };

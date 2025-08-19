@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+// PRODUCTION MODE: Using production client
 import apiClient from './apiClient';
 
 // REGISTRO
@@ -15,19 +16,42 @@ export const registerUser = async ({ name, email, password }) => {
 export const loginUser = async ({ email, password }) => {
   console.log('🔄 Intentando login con:', email);
   
-  const response = await apiClient.post('/auth/login', {
-    email,
-    password,
-  });
+  try {
+    console.log('📡 Enviando request de login...');
+    const response = await apiClient.post('/auth/login', {
+      email,
+      password,
+    });
 
-  console.log('✅ Login exitoso, guardando token');
-  await AsyncStorage.setItem('token', response.data.token);
-  return response.data.user;
+    console.log('✅ Login exitoso, guardando token');
+    await AsyncStorage.setItem('token', response.data.token);
+    return response.data.user;
+  } catch (error) {
+    console.error('❌ Error detallado en loginUser:', {
+      message: error.message,
+      code: error.code,
+      response: error.response?.data,
+      responseStatus: error.response?.status,
+      config: {
+        url: error.config?.url,
+        baseURL: error.config?.baseURL,
+        method: error.config?.method,
+      }
+    });
+    
+    // Re-throw con información adicional
+    if (error.code === 'ERR_NETWORK') {
+      throw new Error(`Network Error: Unable to connect to server. Please check if the server is running and accessible.`);
+    }
+    throw error;
+  }
 };
 
 // LOGOUT
 export const logoutUser = async () => {
   await AsyncStorage.removeItem('token');
+  await AsyncStorage.removeItem('userData');
+  await AsyncStorage.removeItem('user');
 };
 
 // OBTENER PERFIL

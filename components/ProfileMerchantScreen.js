@@ -67,7 +67,9 @@ const ProfileMerchantScreen = () => {
   const handleLogout = async () => {
     try {
       await AsyncStorage.removeItem('token');
-      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+      await AsyncStorage.removeItem('userData');
+      await AsyncStorage.removeItem('user');
+      navigation.reset({ index: 0, routes: [{ name: 'UserType' }] });
     } catch (err) {
       console.error('❌ Error al cerrar sesión:', err);
     }
@@ -123,8 +125,22 @@ const ProfileMerchantScreen = () => {
       </View>
 
       <View style={styles.sectionList}>
+        <TouchableOpacity 
+          style={styles.listItem}
+          onPress={() => navigation.navigate('MerchantLocation')}
+        >
+          <View style={styles.listItemContent}>
+            <Icon name="location" size={20} color="#FF6B6B" style={styles.listIcon} />
+            <Text style={styles.listText}>Ubicación del Negocio</Text>
+          </View>
+          <Icon name="chevron-forward" size={16} color="#555" />
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.listItem}>
-          <Text style={styles.listText}>Ayuda</Text>
+          <View style={styles.listItemContent}>
+            <Icon name="help-circle" size={20} color="#666" style={styles.listIcon} />
+            <Text style={styles.listText}>Ayuda</Text>
+          </View>
           <Icon name="chevron-forward" size={16} color="#555" />
         </TouchableOpacity>
 
@@ -205,9 +221,17 @@ const styles = StyleSheet.create({
   listItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: 15,
     borderBottomWidth: 1,
     borderColor: '#eee',
+  },
+  listItemContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  listIcon: {
+    marginRight: 12,
   },
   listText: {
     fontSize: 16,

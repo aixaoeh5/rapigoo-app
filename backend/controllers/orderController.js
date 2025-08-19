@@ -3,6 +3,8 @@ const Cart = require('../models/Cart');
 const User = require('../models/User');
 const Service = require('../models/Service');
 const nodemailer = require('nodemailer');
+const pushNotificationService = require('../services/pushNotificationService');
+const DeliveryAssignmentService = require('../services/DeliveryAssignmentService');
 // Comentar emails por ahora para evitar errores
 // const { 
 //   getOrderConfirmationTemplate, 
@@ -106,15 +108,17 @@ exports.createOrder = async (req, res) => {
       total: cart.total,
       status: 'pending',
       deliveryInfo: {
-        address: {
-          street: deliveryInfo.address,
-          city: 'Santo Domingo',
-          state: 'DN',
-          zipCode: '10001',
-          coordinates: [-69.9, 18.5] // Coordenadas por defecto para DR
-        },
-        instructions: deliveryInfo.instructions,
-        contactPhone: customerInfo.phone
+        address: deliveryInfo.address && typeof deliveryInfo.address === 'object' 
+          ? deliveryInfo.address 
+          : {
+              street: deliveryInfo.address || 'Dirección no especificada',
+              city: 'Santo Domingo',
+              state: 'DN',
+              zipCode: '10001',
+              coordinates: [-69.9, 18.5] // Coordenadas por defecto para DR
+            },
+        instructions: deliveryInfo.instructions || '',
+        contactPhone: deliveryInfo.contactPhone || customerInfo?.phone || 'No especificado'
       },
       paymentInfo: {
         method: paymentMethod,
@@ -126,13 +130,34 @@ exports.createOrder = async (req, res) => {
     // Calcular tiempo estimado de entrega
     order.calculateDeliveryTime();
 
-    await order.save();
-
-    // Limpiar carrito después de crear el pedido
-    await cart.clear();
+    // Usar transacción para asegurar atomicidad entre order.save() y cart.clear()
+    const mongoose = require('mongoose');
+    const session = await mongoose.startSession();
+    
+    try {
+      await session.withTransaction(async () => {
+        // Guardar el pedido
+        await order.save({ session });
+        
+        // Limpiar carrito en la misma transacción
+        await cart.clear({ session });
+        
+        console.log(`✅ Pedido ${order.orderNumber} creado y carrito limpiado exitosamente`);
+      });
+    } finally {
+      await session.endSession();
+    }
 
     // Enviar emails de confirmación (deshabilitado por ahora)
     // sendOrderConfirmationEmails(order, user, merchant);
+    
+    // Enviar notificación push al comerciante sobre nuevo pedido
+    try {
+      await pushNotificationService.sendNewOrderToMerchant(order.merchantId, order);
+      console.log('✅ Notificación de nuevo pedido enviada al comerciante');
+    } catch (pushError) {
+      console.warn('⚠️ Error enviando notificación al comerciante:', pushError.message);
+    }
 
     res.json({
       success: true,
@@ -148,10 +173,23 @@ exports.createOrder = async (req, res) => {
 
   } catch (error) {
     console.error('Error al crear pedido:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error interno del servidor'
-    });
+    
+    // Error específico para problemas de transacción
+    if (error.errorLabels && error.errorLabels.includes('TransientTransactionError')) {
+      console.error('❌ Error de transacción transitorio, se puede reintentar');
+      res.status(503).json({
+        success: false,
+        error: 'Servicio temporalmente no disponible. Intenta nuevamente.',
+        code: 'TRANSACTION_ERROR',
+        retryable: true
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: 'Error interno del servidor',
+        code: 'INTERNAL_SERVER_ERROR'
+      });
+    }
   }
 };
 
@@ -160,7 +198,7 @@ exports.getUserOrders = async (req, res) => {
   try {
     const userId = req.user.id;
     const { page = 1, limit = 20, status } = req.query;
-
+    
     const query = { customerId: userId };
     if (status) {
       query.status = status;
@@ -239,7 +277,7 @@ exports.getMerchantOrders = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit)
-      .populate('userId', 'name email');
+      .populate('customerId', 'name email');
 
     const total = await Order.countDocuments(query);
 
@@ -271,7 +309,7 @@ exports.updateOrderStatus = async (req, res) => {
     const merchantId = req.user.merchantId || req.user.id;
 
     const order = await Order.findOne({ _id: orderId, merchantId })
-      .populate('userId', 'name email')
+      .populate('customerId', 'name email')
       .populate('merchantId', 'businessName');
 
     if (!order) {
@@ -284,8 +322,32 @@ exports.updateOrderStatus = async (req, res) => {
     try {
       await order.updateStatus(status, note);
       
+      // Si el pedido está listo, notificar a deliveries cercanos para que puedan tomarlo
+      if (status === 'ready') {
+        console.log(`🚚 Pedido ${order.orderNumber} listo, notificando a deliveries disponibles`);
+        
+        // Ejecutar notificación en background para no bloquear la respuesta
+        setTimeout(async () => {
+          try {
+            await notifyNearbyDeliveries(order._id);
+            console.log(`✅ Deliveries notificados sobre pedido ${order.orderNumber} disponible`);
+          } catch (notificationError) {
+            console.error('❌ Error notificando deliveries:', notificationError);
+          }
+        }, 1000); // 1 segundo de delay
+      }
+      
       // Enviar notificación por email al cliente (deshabilitado)
       // sendStatusUpdateEmail(order);
+      
+      // Enviar notificación push al cliente
+      try {
+        await pushNotificationService.sendOrderUpdate(order.customerId, order, status);
+        console.log('✅ Notificación push enviada para pedido', order.orderNumber);
+      } catch (pushError) {
+        console.warn('⚠️ Error enviando notificación push:', pushError.message);
+        // No fallar la actualización si las push notifications fallan
+      }
 
       res.json({
         success: true,
@@ -311,6 +373,72 @@ exports.updateOrderStatus = async (req, res) => {
       success: false,
       error: 'Error al actualizar estado del pedido'
     });
+  }
+};
+
+// Función para notificar a deliveries cercanos sobre pedidos listos
+const notifyNearbyDeliveries = async (orderId) => {
+  try {
+    const order = await Order.findById(orderId)
+      .populate('merchantId', 'business.businessName business.address business.location');
+
+    if (!order || order.status !== 'ready') {
+      return;
+    }
+
+    const merchantLocation = order.merchantId.business?.location?.coordinates || 
+                            [-69.9312, 18.4861]; // Default Santo Domingo
+
+    // Buscar deliveries disponibles en un radio de 15km
+    const nearbyDeliveries = await User.find({
+      role: 'delivery',
+      deliveryStatus: 'aprobado',
+      'delivery.isAvailable': true,
+      'delivery.workZone.center': {
+        $near: {
+          $geometry: {
+            type: 'Point',
+            coordinates: merchantLocation
+          },
+          $maxDistance: 15000 // 15 km en metros
+        }
+      }
+    })
+    .select('name phone delivery')
+    .limit(20); // Máximo 20 deliveries
+
+    console.log(`📍 Encontrados ${nearbyDeliveries.length} deliveries cercanos para pedido ${order.orderNumber}`);
+
+    // Enviar notificación push a cada delivery cercano
+    const notificationPromises = nearbyDeliveries.map(async (delivery) => {
+      const distance = DeliveryAssignmentService.calculateDistance(
+        merchantLocation,
+        delivery.delivery.workZone.center
+      ).toFixed(1);
+
+      return pushNotificationService.sendToUser(delivery._id, {
+        title: '🚚 Nuevo pedido disponible',
+        body: `${order.merchantId.business?.businessName} - ${distance}km - RD$${order.total}`,
+        image: null
+      }, {
+        type: 'order_available',
+        orderId: order._id.toString(),
+        orderNumber: order.orderNumber,
+        merchantName: order.merchantId.business?.businessName,
+        distance: distance,
+        total: order.total.toString(),
+        estimatedEarning: Math.round(order.total * 0.1).toString(), // 10% comisión estimada
+        channelId: 'rapigoo-delivery-orders',
+        action: 'open_available_orders'
+      });
+    });
+
+    await Promise.all(notificationPromises);
+    console.log(`✅ ${nearbyDeliveries.length} notificaciones enviadas para pedido ${order.orderNumber}`);
+
+  } catch (error) {
+    console.error('❌ Error notificando deliveries cercanos:', error);
+    throw error;
   }
 };
 
@@ -394,7 +522,7 @@ exports.getAdminOrders = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit)
-      .populate('userId', 'name email')
+      .populate('customerId', 'name email')
       .populate('merchantId', 'businessName');
 
     const total = await Order.countDocuments(query);

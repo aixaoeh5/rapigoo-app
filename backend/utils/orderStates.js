@@ -4,6 +4,10 @@ const ORDER_STATES = {
   CONFIRMED: 'confirmed', 
   PREPARING: 'preparing',
   READY: 'ready',
+  ASSIGNED_DELIVERY: 'assigned_delivery',
+  PICKED_UP: 'picked_up',
+  IN_TRANSIT: 'in_transit',
+  DELIVERED: 'delivered',
   COMPLETED: 'completed',
   CANCELLED: 'cancelled'
 };
@@ -13,7 +17,11 @@ const VALID_TRANSITIONS = {
   [ORDER_STATES.PENDING]: [ORDER_STATES.CONFIRMED, ORDER_STATES.CANCELLED],
   [ORDER_STATES.CONFIRMED]: [ORDER_STATES.PREPARING, ORDER_STATES.CANCELLED],
   [ORDER_STATES.PREPARING]: [ORDER_STATES.READY, ORDER_STATES.CANCELLED],
-  [ORDER_STATES.READY]: [ORDER_STATES.COMPLETED, ORDER_STATES.CANCELLED],
+  [ORDER_STATES.READY]: [ORDER_STATES.ASSIGNED_DELIVERY, ORDER_STATES.COMPLETED, ORDER_STATES.CANCELLED], // Puede ir directo a completed si no hay delivery
+  [ORDER_STATES.ASSIGNED_DELIVERY]: [ORDER_STATES.PICKED_UP, ORDER_STATES.CANCELLED],
+  [ORDER_STATES.PICKED_UP]: [ORDER_STATES.IN_TRANSIT, ORDER_STATES.DELIVERED, ORDER_STATES.CANCELLED],
+  [ORDER_STATES.IN_TRANSIT]: [ORDER_STATES.DELIVERED, ORDER_STATES.CANCELLED],
+  [ORDER_STATES.DELIVERED]: [ORDER_STATES.COMPLETED],
   [ORDER_STATES.COMPLETED]: [], // Estado final
   [ORDER_STATES.CANCELLED]: []  // Estado final
 };
@@ -44,9 +52,33 @@ const STATE_DESCRIPTIONS = {
     icon: '📦',
     color: '#FF9800'
   },
+  [ORDER_STATES.ASSIGNED_DELIVERY]: {
+    title: 'Delivery Asignado',
+    description: 'Un delivery fue asignado a tu pedido',
+    icon: '🛵',
+    color: '#9C27B0'
+  },
+  [ORDER_STATES.PICKED_UP]: {
+    title: 'Recogido',
+    description: 'El delivery recogió tu pedido',
+    icon: '🎒',
+    color: '#3F51B5'
+  },
+  [ORDER_STATES.IN_TRANSIT]: {
+    title: 'En Camino',
+    description: 'Tu pedido va en camino hacia ti',
+    icon: '🚚',
+    color: '#2196F3'
+  },
+  [ORDER_STATES.DELIVERED]: {
+    title: 'Entregado',
+    description: 'Tu pedido fue entregado',
+    icon: '📍',
+    color: '#4CAF50'
+  },
   [ORDER_STATES.COMPLETED]: {
     title: 'Completado',
-    description: 'Pedido entregado exitosamente',
+    description: 'Pedido finalizado exitosamente',
     icon: '🎉',
     color: '#4CAF50'
   },
@@ -64,15 +96,35 @@ const ROLE_ACTIONS = {
     [ORDER_STATES.PENDING]: ['confirm', 'cancel'],
     [ORDER_STATES.CONFIRMED]: ['prepare', 'cancel'],
     [ORDER_STATES.PREPARING]: ['ready', 'cancel'],
-    [ORDER_STATES.READY]: ['complete', 'cancel'],
+    [ORDER_STATES.READY]: ['complete', 'cancel'], // Solo puede completar directo o cancelar, delivery tomará el pedido
+    [ORDER_STATES.ASSIGNED_DELIVERY]: ['cancel'], // Solo puede cancelar una vez asignado
+    [ORDER_STATES.PICKED_UP]: [],
+    [ORDER_STATES.IN_TRANSIT]: [],
+    [ORDER_STATES.DELIVERED]: ['complete'],
     [ORDER_STATES.COMPLETED]: [],
     [ORDER_STATES.CANCELLED]: []
   },
   customer: {
     [ORDER_STATES.PENDING]: ['cancel'],
-    [ORDER_STATES.CONFIRMED]: [],
+    [ORDER_STATES.CONFIRMED]: ['cancel'],
     [ORDER_STATES.PREPARING]: [],
     [ORDER_STATES.READY]: [],
+    [ORDER_STATES.ASSIGNED_DELIVERY]: [],
+    [ORDER_STATES.PICKED_UP]: [],
+    [ORDER_STATES.IN_TRANSIT]: [],
+    [ORDER_STATES.DELIVERED]: ['confirm_delivery'],
+    [ORDER_STATES.COMPLETED]: ['rate_order'],
+    [ORDER_STATES.CANCELLED]: []
+  },
+  delivery: {
+    [ORDER_STATES.PENDING]: [],
+    [ORDER_STATES.CONFIRMED]: [],
+    [ORDER_STATES.PREPARING]: [],
+    [ORDER_STATES.READY]: ['accept_delivery'], // Puede aceptar pedidos listos
+    [ORDER_STATES.ASSIGNED_DELIVERY]: ['pickup', 'reject_delivery'],
+    [ORDER_STATES.PICKED_UP]: ['start_transit', 'deliver'],
+    [ORDER_STATES.IN_TRANSIT]: ['deliver'],
+    [ORDER_STATES.DELIVERED]: [],
     [ORDER_STATES.COMPLETED]: [],
     [ORDER_STATES.CANCELLED]: []
   },
@@ -80,7 +132,11 @@ const ROLE_ACTIONS = {
     [ORDER_STATES.PENDING]: ['confirm', 'cancel'],
     [ORDER_STATES.CONFIRMED]: ['prepare', 'cancel'],
     [ORDER_STATES.PREPARING]: ['ready', 'cancel'],
-    [ORDER_STATES.READY]: ['complete', 'cancel'],
+    [ORDER_STATES.READY]: ['assign_delivery', 'complete', 'cancel'],
+    [ORDER_STATES.ASSIGNED_DELIVERY]: ['pickup', 'cancel'],
+    [ORDER_STATES.PICKED_UP]: ['start_transit', 'deliver', 'cancel'],
+    [ORDER_STATES.IN_TRANSIT]: ['deliver', 'cancel'],
+    [ORDER_STATES.DELIVERED]: ['complete'],
     [ORDER_STATES.COMPLETED]: ['reopen'],
     [ORDER_STATES.CANCELLED]: ['reopen']
   }
@@ -91,8 +147,15 @@ const ACTION_TO_STATE = {
   confirm: ORDER_STATES.CONFIRMED,
   prepare: ORDER_STATES.PREPARING,
   ready: ORDER_STATES.READY,
+  assign_delivery: ORDER_STATES.ASSIGNED_DELIVERY,
+  accept_delivery: ORDER_STATES.ASSIGNED_DELIVERY,
+  pickup: ORDER_STATES.PICKED_UP,
+  start_transit: ORDER_STATES.IN_TRANSIT,
+  deliver: ORDER_STATES.DELIVERED,
+  confirm_delivery: ORDER_STATES.DELIVERED,
   complete: ORDER_STATES.COMPLETED,
   cancel: ORDER_STATES.CANCELLED,
+  reject_delivery: ORDER_STATES.READY, // Vuelve a ready para reasignar
   reopen: ORDER_STATES.PENDING
 };
 

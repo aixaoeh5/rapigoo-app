@@ -1,12 +1,33 @@
 import { Platform, PermissionsAndroid, Alert, Linking } from 'react-native';
 import Geolocation from '@react-native-community/geolocation';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CoordinateValidator } from '../utils/coordinateValidator';
 
 class LocationService {
   constructor() {
     this.currentLocation = null;
     this.watchId = null;
     this.locationPermissionGranted = false;
+    // FIX: Agregar referencias para cleanup
+    this.activeCallbacks = new Set();
+    this.cleanupTimers = new Set();
+    this.isWatching = false;
+  }
+
+  // FIX: Mejorar cleanup de callbacks
+  addCallback(callback) {
+    if (typeof callback === 'function') {
+      this.activeCallbacks.add(callback);
+    }
+  }
+
+  removeCallback(callback) {
+    this.activeCallbacks.delete(callback);
+  }
+
+  // FIX: Cleanup completo de todos los callbacks
+  clearAllCallbacks() {
+    this.activeCallbacks.clear();
   }
 
   // Solicitar permisos de ubicación
@@ -67,7 +88,7 @@ class LocationService {
     );
   }
 
-  // Obtener ubicación actual
+  // FIX: Mejorar getCurrentLocation con mejor error handling
   async getCurrentLocation(options = {}) {
     const defaultOptions = {
       timeout: 15000,
@@ -85,8 +106,19 @@ class LocationService {
     }
 
     return new Promise((resolve, reject) => {
+      // FIX: Agregar timeout personalizado para evitar hanging
+      const timeoutId = setTimeout(() => {
+        reject(new Error('LOCATION_TIMEOUT'));
+      }, defaultOptions.timeout + 1000);
+      
+      this.cleanupTimers.add(timeoutId);
+
       Geolocation.getCurrentPosition(
         (position) => {
+          // FIX: Limpiar timeout
+          clearTimeout(timeoutId);
+          this.cleanupTimers.delete(timeoutId);
+          
           const location = {
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
@@ -94,11 +126,20 @@ class LocationService {
             timestamp: position.timestamp,
           };
 
-          this.currentLocation = location;
-          this.saveLocationToStorage(location);
-          resolve(location);
+          // FIX: Validar coordenadas antes de guardar
+          if (this.validateCoordinates(location)) {
+            this.currentLocation = location;
+            this.saveLocationToStorage(location);
+            resolve(location);
+          } else {
+            reject(new Error('INVALID_COORDINATES'));
+          }
         },
         (error) => {
+          // FIX: Limpiar timeout
+          clearTimeout(timeoutId);
+          this.cleanupTimers.delete(timeoutId);
+          
           console.error('Error obteniendo ubicación:', error);
           
           switch (error.code) {
@@ -120,7 +161,7 @@ class LocationService {
     });
   }
 
-  // Iniciar seguimiento de ubicación
+  // FIX: Mejorar startLocationTracking con cleanup adecuado
   async startLocationTracking(callback, options = {}) {
     const defaultOptions = {
       timeout: 30000,
@@ -137,41 +178,104 @@ class LocationService {
       }
     }
 
-    this.watchId = Geolocation.watchPosition(
-      (position) => {
-        const location = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-          timestamp: position.timestamp,
-        };
+    // FIX: Detener tracking anterior si existe
+    if (this.isWatching) {
+      this.stopLocationTracking();
+    }
 
+    // FIX: Agregar callback a la lista de activos
+    if (callback) {
+      this.addCallback(callback);
+    }
+
+    // FIX: Wrapper para callback que incluye cleanup automático
+    const wrappedCallback = (position) => {
+      const location = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+        timestamp: position.timestamp,
+      };
+
+      // FIX: Validar coordenadas
+      if (this.validateCoordinates(location)) {
         this.currentLocation = location;
         this.saveLocationToStorage(location);
         
-        if (callback) {
-          callback(location);
+        // FIX: Solo llamar callbacks activos
+        this.activeCallbacks.forEach(cb => {
+          try {
+            if (typeof cb === 'function') {
+              cb(location);
+            }
+          } catch (error) {
+            console.error('Error en callback de ubicación:', error);
+          }
+        });
+      }
+    };
+
+    const wrappedErrorCallback = (error) => {
+      console.error('Error en seguimiento de ubicación:', error);
+      
+      // FIX: Solo llamar callbacks activos para errores
+      this.activeCallbacks.forEach(cb => {
+        try {
+          if (typeof cb === 'function') {
+            cb(null, error);
+          }
+        } catch (callbackError) {
+          console.error('Error en callback de error:', callbackError);
         }
-      },
-      (error) => {
-        console.error('Error en seguimiento de ubicación:', error);
-        if (callback) {
-          callback(null, error);
-        }
-      },
+      });
+    };
+
+    this.watchId = Geolocation.watchPosition(
+      wrappedCallback,
+      wrappedErrorCallback,
       defaultOptions
     );
+
+    this.isWatching = true;
+    console.log('📍 Seguimiento de ubicación iniciado con watchId:', this.watchId);
 
     return this.watchId;
   }
 
-  // Detener seguimiento de ubicación
+  // FIX: Mejorar stopLocationTracking con cleanup completo
   stopLocationTracking() {
     if (this.watchId !== null) {
       Geolocation.clearWatch(this.watchId);
       this.watchId = null;
+      this.isWatching = false;
       console.log('📍 Seguimiento de ubicación detenido');
     }
+    
+    // FIX: Limpiar callbacks activos
+    this.clearAllCallbacks();
+    
+    // FIX: Limpiar timers pendientes
+    this.cleanupTimers.forEach(timerId => {
+      clearTimeout(timerId);
+    });
+    this.cleanupTimers.clear();
+  }
+
+  // FIX: Agregar validación de coordenadas
+  validateCoordinates(location) {
+    if (!location || typeof location !== 'object') {
+      return false;
+    }
+    
+    const { latitude, longitude } = location;
+    
+    return (
+      typeof latitude === 'number' && 
+      typeof longitude === 'number' &&
+      latitude >= -90 && latitude <= 90 &&
+      longitude >= -180 && longitude <= 180 &&
+      !isNaN(latitude) && !isNaN(longitude)
+    );
   }
 
   // Calcular distancia entre dos puntos (en km)
@@ -210,6 +314,11 @@ class LocationService {
   // Obtener dirección aproximada desde coordenadas (geocodificación inversa)
   async reverseGeocode(latitude, longitude) {
     try {
+      // FIX: Validar coordenadas antes de procesar
+      if (!this.validateCoordinates({ latitude, longitude })) {
+        throw new Error('Coordenadas inválidas');
+      }
+      
       // Nota: En producción, usar un servicio como Google Geocoding API
       // Por ahora, retornamos coordenadas formateadas
       return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
@@ -224,6 +333,11 @@ class LocationService {
     try {
       if (!this.currentLocation) {
         await this.getCurrentLocation();
+      }
+
+      // FIX: Validar ubicación actual
+      if (!this.validateCoordinates(this.currentLocation)) {
+        throw new Error('Ubicación actual inválida');
       }
 
       const { latitude, longitude } = this.currentLocation;
@@ -258,9 +372,14 @@ class LocationService {
     }
   }
 
-  // Guardar ubicación en storage local
+  // FIX: Mejorar saveLocationToStorage con mejor error handling
   async saveLocationToStorage(location) {
     try {
+      if (!this.validateCoordinates(location)) {
+        console.warn('⚠️ Intentando guardar ubicación inválida:', location);
+        return;
+      }
+      
       await AsyncStorage.setItem('lastKnownLocation', JSON.stringify({
         ...location,
         savedAt: Date.now()
@@ -279,7 +398,7 @@ class LocationService {
         const ageInHours = (Date.now() - location.savedAt) / (1000 * 60 * 60);
         
         // Si la ubicación tiene menos de 6 horas, la usamos
-        if (ageInHours < 6) {
+        if (ageInHours < 6 && this.validateCoordinates(location)) {
           this.currentLocation = location;
           return location;
         }
@@ -291,26 +410,40 @@ class LocationService {
     }
   }
 
-  // Obtener ubicación con fallback
+  // FIX: Mejorar getLocationWithFallback sin recursión
   async getLocationWithFallback() {
-    try {
-      // Intentar obtener ubicación actual
-      return await this.getCurrentLocation({ timeout: 10000 });
-    } catch (error) {
-      console.warn('No se pudo obtener ubicación actual, usando última conocida');
-      
-      // Intentar cargar última ubicación conocida
-      const lastLocation = await this.loadLastKnownLocation();
-      if (lastLocation) {
-        return lastLocation;
+    let attempts = 0;
+    const maxAttempts = 3;
+    
+    while (attempts < maxAttempts) {
+      try {
+        // Intentar obtener ubicación actual
+        return await this.getCurrentLocation({ 
+          timeout: 10000 - (attempts * 2000) // Reducir timeout en cada intento
+        });
+      } catch (error) {
+        console.warn(`Intento ${attempts + 1} falló:`, error.message);
+        attempts++;
+        
+        if (attempts >= maxAttempts) {
+          // Intentar cargar última ubicación conocida
+          const lastLocation = await this.loadLastKnownLocation();
+          if (lastLocation) {
+            console.log('✅ Usando última ubicación conocida');
+            return lastLocation;
+          }
+          
+          // Si no hay ubicación, mostrar diálogo
+          if (error.message === 'PERMISSION_DENIED') {
+            this.showLocationSettingsDialog();
+          }
+          
+          throw new Error(`No se pudo obtener ubicación después de ${maxAttempts} intentos: ${error.message}`);
+        }
+        
+        // Esperar antes del siguiente intento
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
       }
-      
-      // Si no hay ubicación, mostrar diálogo
-      if (error.message === 'PERMISSION_DENIED') {
-        this.showLocationSettingsDialog();
-      }
-      
-      throw error;
     }
   }
 
@@ -319,11 +452,25 @@ class LocationService {
     return this.locationPermissionGranted && this.currentLocation !== null;
   }
 
-  // Limpiar datos del servicio
+  // FIX: Mejorar cleanup con limpieza completa
   cleanup() {
+    console.log('🧹 Limpiando LocationService...');
+    
+    // Detener tracking
     this.stopLocationTracking();
+    
+    // Limpiar estado
     this.currentLocation = null;
     this.locationPermissionGranted = false;
+    
+    // Limpiar callbacks y timers
+    this.clearAllCallbacks();
+    this.cleanupTimers.forEach(timerId => {
+      clearTimeout(timerId);
+    });
+    this.cleanupTimers.clear();
+    
+    console.log('✅ LocationService limpiado completamente');
   }
 }
 

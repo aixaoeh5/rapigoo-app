@@ -1,0 +1,175 @@
+{
+  "timestamp": "2025-08-17T23:38:15.078Z",
+  "duration": 6495,
+  "summary": {
+    "totalSuites": 7,
+    "successfulSuites": 0,
+    "failedSuites": 7,
+    "totalTests": 0,
+    "passedTests": 0,
+    "failedTests": 0
+  },
+  "suites": [
+    {
+      "name": "Customer Journey Tests",
+      "file": "customerJourney.test.js",
+      "priority": "critical",
+      "duration": 1434,
+      "success": false,
+      "stats": {
+        "total": 0,
+        "passed": 0,
+        "failed": 0
+      },
+      "output": "",
+      "errors": []
+    },
+    {
+      "name": "Merchant Workflow Tests",
+      "file": "merchantWorkflow.test.js",
+      "priority": "critical",
+      "duration": 842,
+      "success": false,
+      "stats": {
+        "total": 0,
+        "passed": 0,
+        "failed": 0
+      },
+      "output": "",
+      "errors": []
+    },
+    {
+      "name": "Delivery Person Flow Tests",
+      "file": "deliveryPersonFlow.test.js",
+      "priority": "critical",
+      "duration": 821,
+      "success": false,
+      "stats": {
+        "total": 0,
+        "passed": 0,
+        "failed": 0
+      },
+      "output": "",
+      "errors": []
+    },
+    {
+      "name": "Cross-User Integration Tests",
+      "file": "crossUserIntegration.test.js",
+      "priority": "high",
+      "duration": 846,
+      "success": false,
+      "stats": {
+        "total": 0,
+        "passed": 0,
+        "failed": 0
+      },
+      "output": "",
+      "errors": []
+    },
+    {
+      "name": "Data Integrity Tests",
+      "file": "dataIntegrityTests.test.js",
+      "priority": "critical",
+      "duration": 835,
+      "success": false,
+      "stats": {
+        "total": 0,
+        "passed": 0,
+        "failed": 0
+      },
+      "output": "",
+      "errors": []
+    },
+    {
+      "name": "API Integration Tests",
+      "file": "apiIntegrationTests.test.js",
+      "priority": "high",
+      "duration": 853,
+      "success": false,
+      "stats": {
+        "total": 0,
+        "passed": 0,
+        "failed": 0
+      },
+      "output": "",
+      "errors": []
+    },
+    {
+      "name": "Stress and Edge Cases",
+      "file": "stressAndEdgeCases.test.js",
+      "priority": "medium",
+      "duration": 843,
+      "success": false,
+      "stats": {
+        "total": 0,
+        "passed": 0,
+        "failed": 0
+      },
+      "output": "",
+      "errors": []
+    }
+  ],
+  "criticalFailures": [
+    {
+      "name": "Customer Journey Tests",
+      "file": "customerJourney.test.js",
+      "priority": "critical",
+      "duration": 1434,
+      "success": false,
+      "stats": {
+        "total": 0,
+        "passed": 0,
+        "failed": 0
+      },
+      "output": "",
+      "errors": []
+    },
+    {
+      "name": "Merchant Workflow Tests",
+      "file": "merchantWorkflow.test.js",
+      "priority": "critical",
+      "duration": 842,
+      "success": false,
+      "stats": {
+        "total": 0,
+        "passed": 0,
+        "failed": 0
+      },
+      "output": "",
+      "errors": []
+    },
+    {
+      "name": "Delivery Person Flow Tests",
+      "file": "deliveryPersonFlow.test.js",
+      "priority": "critical",
+      "duration": 821,
+      "success": false,
+      "stats": {
+        "total": 0,
+        "passed": 0,
+        "failed": 0
+      },
+      "output": "",
+      "errors": []
+    },
+    {
+      "name": "Data Integrity Tests",
+      "file": "dataIntegrityTests.test.js",
+      "priority": "critical",
+      "duration": 835,
+      "success": false,
+      "stats": {
+        "total": 0,
+        "passed": 0,
+        "failed": 0
+      },
+      "output": "",
+      "errors": []
+    }
+  ],
+  "environment": {
+    "nodeVersion": "v22.17.0",
+    "platform": "win32",
+    "arch": "x64"
+  }
+}

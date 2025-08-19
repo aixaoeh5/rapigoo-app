@@ -1,7 +1,7 @@
 // hooks/useDeliveryTracking.js
 import { useState, useEffect, useCallback } from 'react';
 import realTimeService from '../services/realTimeService';
-import { apiClient } from '../api/apiClient';
+import apiClient from '../api/apiClient';
 
 export const useDeliveryTracking = (orderId) => {
   const [deliveryData, setDeliveryData] = useState(null);
@@ -65,9 +65,18 @@ export const useDeliveryTracking = (orderId) => {
       
       if (response.data.success) {
         const trackingData = response.data.data.deliveryTracking;
-        setDeliveryData(trackingData);
         
-        console.log('✅ Delivery tracking loaded:', trackingData);
+        // Validar estructura de datos antes de guardar
+        console.log('✅ Delivery tracking loaded:', {
+          id: trackingData?._id,
+          status: trackingData?.status,
+          hasCurrentLocation: !!trackingData?.currentLocation,
+          hasDeliveryLocation: !!trackingData?.deliveryLocation,
+          currentCoords: trackingData?.currentLocation?.coordinates,
+          deliveryCoords: trackingData?.deliveryLocation?.coordinates
+        });
+        
+        setDeliveryData(trackingData);
         
         // Conectar al servicio de tiempo real
         if (!realTimeService.getConnectionStatus().isConnected) {
@@ -82,8 +91,35 @@ export const useDeliveryTracking = (orderId) => {
         setError(response.data.error?.message || 'Failed to load tracking data');
       }
     } catch (err) {
+      const isNotFound = err.response?.status === 404;
+      const isNetworkError = !err.response;
+      const isUnauthorized = err.response?.status === 401 || err.response?.status === 403;
+      
+      let errorMessage = 'Failed to load tracking data';
+      
+      if (isNotFound) {
+        // Para pedidos sin delivery asignado, esto es normal - no es realmente un error
+        console.log('✅ Pedido sin delivery asignado - Esto es normal para pedidos en preparación:', orderId);
+        setError(null); // No mostrar como error
+        setDeliveryData(null); // Asegurar que no hay datos de delivery
+        setIsLoading(false);
+        return; // Salir sin setear error
+      }
+      
+      // Solo mostrar error si realmente es un error (no un 404 esperado)
       console.error('❌ Error loading delivery tracking:', err);
-      setError(err.response?.data?.error?.message || err.message || 'Failed to load tracking data');
+      
+      if (isNetworkError) {
+        errorMessage = 'Error de conexión';
+        console.log('🌐 Error de red al cargar tracking');
+      } else if (isUnauthorized) {
+        errorMessage = 'No tienes acceso a este pedido';
+        console.log('🚫 Acceso denegado al tracking');
+      } else {
+        errorMessage = err.response?.data?.error?.message || err.message || 'Error desconocido';
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

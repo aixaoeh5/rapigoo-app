@@ -9,6 +9,9 @@ class SocketService {
     this.io = null;
     this.connectedUsers = new Map(); // Map of userId -> socket.id
     this.userSockets = new Map(); // Map of socket.id -> user info
+    this.lastLocations = new Map(); // Map of orderId -> last location for deduplication
+    this.locationUpdateThreshold = 0.01; // 10 meters in km
+    this.locationTimeThreshold = 5000; // 5 seconds minimum between updates
   }
 
   initialize(server) {
@@ -508,6 +511,133 @@ class SocketService {
     });
   }
 
+  // Enhanced delivery status update with operation tracking
+  emitStatusUpdate(data) {
+    try {
+      const { orderId, deliveryPersonId, status, currentLocation, operationId, automatic = false } = data;
+      
+      // Emit to delivery room (customers, merchants, delivery person)
+      const deliveryRoom = `delivery_${orderId}`;
+      const statusUpdateData = {
+        orderId,
+        deliveryPersonId,
+        status,
+        currentLocation,
+        operationId,
+        automatic,
+        timestamp: new Date()
+      };
+
+      this.io.to(deliveryRoom).emit('delivery_status_updated', statusUpdateData);
+
+      // Also emit to delivery person's personal room for their dashboard
+      if (deliveryPersonId) {
+        const deliveryPersonRoom = `delivery_person_${deliveryPersonId}`;
+        this.io.to(deliveryPersonRoom).emit('delivery_status_updated', statusUpdateData);
+      }
+
+      logger.info('Delivery status update emitted:', {
+        orderId,
+        status,
+        operationId,
+        automatic
+      });
+
+    } catch (error) {
+      logger.error('Error emitting status update:', error);
+    }
+  }
+
+  // Enhanced location update with deduplication
+  emitLocationUpdate(data) {
+    try {
+      const { orderId, deliveryPersonId, location, operationId } = data;
+      
+      // Only emit if location has meaningful change
+      if (!this.shouldEmitLocationUpdate(orderId, location)) {
+        return false;
+      }
+
+      const deliveryRoom = `delivery_${orderId}`;
+      const locationUpdateData = {
+        orderId,
+        deliveryPersonId,
+        location,
+        operationId,
+        timestamp: new Date()
+      };
+
+      this.io.to(deliveryRoom).emit('delivery_location_updated', locationUpdateData);
+
+      // Store last location for deduplication
+      this.storeLastLocation(orderId, location);
+
+      logger.info('Delivery location update emitted:', {
+        orderId,
+        operationId,
+        coordinates: location.coordinates
+      });
+
+      return true;
+
+    } catch (error) {
+      logger.error('Error emitting location update:', error);
+      return false;
+    }
+  }
+
+  // Delivery operation result emission
+  emitOperationResult(data) {
+    try {
+      const { operationId, operationType, success, error, deliveryId, userId } = data;
+      
+      // Emit to specific user who initiated the operation
+      if (userId) {
+        this.sendToUser(userId, 'delivery_operation_result', {
+          operationId,
+          operationType,
+          success,
+          error,
+          deliveryId,
+          timestamp: new Date()
+        });
+      }
+
+      logger.info('Delivery operation result emitted:', {
+        operationId,
+        operationType,
+        success
+      });
+
+    } catch (error) {
+      logger.error('Error emitting operation result:', error);
+    }
+  }
+
+  // Batch operation updates
+  emitBatchUpdate(updates) {
+    try {
+      updates.forEach(update => {
+        switch (update.type) {
+          case 'status':
+            this.emitStatusUpdate(update.data);
+            break;
+          case 'location':
+            this.emitLocationUpdate(update.data);
+            break;
+          case 'operation_result':
+            this.emitOperationResult(update.data);
+            break;
+        }
+      });
+
+      logger.info('Batch updates emitted:', { count: updates.length });
+
+    } catch (error) {
+      logger.error('Error emitting batch updates:', error);
+    }
+  }
+
   getConnectedUsersCount() {
     return this.connectedUsers.size;
   }
@@ -518,6 +648,105 @@ class SocketService {
 
   getUserSockets() {
     return Array.from(this.userSockets.values());
+  }
+
+  // Location deduplication helpers
+  shouldEmitLocationUpdate(orderId, newLocation) {
+    const lastLocationData = this.lastLocations.get(orderId);
+    
+    if (!lastLocationData) {
+      return true; // First location update
+    }
+
+    const { location: lastLocation, timestamp: lastTimestamp } = lastLocationData;
+    const now = Date.now();
+    
+    // Check time threshold
+    if (now - lastTimestamp < this.locationTimeThreshold) {
+      return false;
+    }
+
+    // Check distance threshold
+    const distance = this.calculateDistance(
+      lastLocation.coordinates[1], // latitude
+      lastLocation.coordinates[0], // longitude
+      newLocation.coordinates[1],
+      newLocation.coordinates[0]
+    );
+
+    return distance >= this.locationUpdateThreshold;
+  }
+
+  storeLastLocation(orderId, location) {
+    this.lastLocations.set(orderId, {
+      location,
+      timestamp: Date.now()
+    });
+
+    // Clean up old locations (keep only last 100)
+    if (this.lastLocations.size > 100) {
+      const oldestKey = this.lastLocations.keys().next().value;
+      this.lastLocations.delete(oldestKey);
+    }
+  }
+
+  calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Earth's radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  // Room management for delivery tracking
+  joinDeliveryRoom(socket, orderId) {
+    const roomName = `delivery_${orderId}`;
+    socket.join(roomName);
+    
+    // Also join delivery person room if applicable
+    if (socket.user && socket.user.role === 'delivery') {
+      const deliveryPersonRoom = `delivery_person_${socket.userId}`;
+      socket.join(deliveryPersonRoom);
+    }
+
+    logger.info('User joined delivery room:', {
+      userId: socket.userId,
+      orderId,
+      role: socket.user?.role
+    });
+  }
+
+  leaveDeliveryRoom(socket, orderId) {
+    const roomName = `delivery_${orderId}`;
+    socket.leave(roomName);
+
+    if (socket.user && socket.user.role === 'delivery') {
+      const deliveryPersonRoom = `delivery_person_${socket.userId}`;
+      socket.leave(deliveryPersonRoom);
+    }
+
+    logger.info('User left delivery room:', {
+      userId: socket.userId,
+      orderId
+    });
+  }
+
+  // Cleanup when delivery is completed
+  cleanupDeliveryTracking(orderId) {
+    // Remove stored location data
+    this.lastLocations.delete(orderId);
+    
+    // Optionally emit cleanup notification to room
+    const roomName = `delivery_${orderId}`;
+    this.io.to(roomName).emit('delivery_tracking_ended', {
+      orderId,
+      timestamp: new Date()
+    });
+
+    logger.info('Delivery tracking cleanup completed:', { orderId });
   }
 }
 

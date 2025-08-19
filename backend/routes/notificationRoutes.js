@@ -4,6 +4,7 @@ const verifyToken = require('../middleware/verifyToken');
 const { validate } = require('../middleware/validation');
 const Joi = require('joi');
 const User = require('../models/User');
+const pushNotificationService = require('../services/pushNotificationService');
 
 // Modelo para tokens de dispositivos
 const DeviceToken = require('../models/DeviceToken');
@@ -50,9 +51,19 @@ const sendNotificationSchema = Joi.object({
 
 // Registrar token de dispositivo
 const registerDevice = async (req, res) => {
+  console.log('📱 === INICIO REGISTRO DE DISPOSITIVO ===');
+  console.log('  - Timestamp:', new Date().toISOString());
+  console.log('  - IP:', req.ip || req.connection?.remoteAddress);
+  console.log('  - User-Agent:', req.get('User-Agent')?.substring(0, 100));
+  console.log('  - Body:', JSON.stringify(req.body, null, 2));
+  console.log('  - User ID:', req.user?.id);
+  console.log('  - User Role:', req.user?.role);
+  
   try {
+    
     const { error, value } = registerDeviceSchema.validate(req.body);
     if (error) {
+      console.error('❌ Error de validación:', error.details);
       return res.status(400).json({
         success: false,
         error: 'Datos inválidos',
@@ -62,43 +73,39 @@ const registerDevice = async (req, res) => {
         }))
       });
     }
+    
+    console.log('✅ Validación exitosa:', value);
 
     const userId = req.user.id;
     const { deviceToken, platform, deviceInfo } = value;
 
-    // Buscar o crear registro de dispositivo
-    let device = await DeviceToken.findOne({ deviceToken });
+    // FIX: Reemplazar lógica problemática con método upsertToken
+    console.log('🔧 Usando método upsertToken para prevenir duplicados...');
+    
+    const device = await DeviceToken.upsertToken(userId, deviceToken, platform, deviceInfo);
+    
+    console.log('✅ Dispositivo procesado exitosamente:', {
+      deviceId: device._id,
+      userId: device.userId,
+      platform: device.platform,
+      isActive: device.isActive,
+      tokenPrefix: deviceToken.substring(0, 15) + '...'
+    });
 
-    if (device) {
-      // Actualizar dispositivo existente
-      device.userId = userId;
-      device.platform = platform;
-      device.deviceInfo = deviceInfo || device.deviceInfo;
-      device.isActive = true;
-      device.lastUpdated = new Date();
-      await device.save();
-    } else {
-      // Crear nuevo registro
-      device = new DeviceToken({
-        userId,
-        deviceToken,
-        platform,
-        deviceInfo,
-        isActive: true
-      });
-      await device.save();
-    }
-
-    // Desactivar otros tokens del mismo usuario en la misma plataforma
-    await DeviceToken.updateMany(
+    // Desactivar otros tokens del mismo usuario en la misma plataforma (máximo 1 activo por plataforma)
+    const deactivatedCount = await DeviceToken.updateMany(
       { 
         userId, 
         platform, 
         deviceToken: { $ne: deviceToken },
         isActive: true 
       },
-      { isActive: false }
+      { isActive: false, unregisteredAt: new Date() }
     );
+    
+    if (deactivatedCount.modifiedCount > 0) {
+      console.log(`🔄 Desactivados ${deactivatedCount.modifiedCount} tokens antiguos del usuario`);
+    }
 
     res.json({
       success: true,
@@ -107,10 +114,43 @@ const registerDevice = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error registrando dispositivo:', error);
+    console.error('❌ === ERROR REGISTRANDO DISPOSITIVO ===');
+    console.error('  - Error name:', error.name);
+    console.error('  - Error message:', error.message);
+    console.error('  - Error code:', error.code);
+    console.error('  - Stack trace:');
+    console.error(error.stack);
+    
+    // Log additional MongoDB specific errors
+    if (error.name === 'MongoError' || error.name === 'MongooseError') {
+      console.error('  - MongoDB Error Details:');
+      console.error('    - Code:', error.code);
+      console.error('    - CodeName:', error.codeName);
+      console.error('    - WriteConcernError:', error.writeConcernError);
+    }
+    
+    // Log validation errors in detail
+    if (error.name === 'ValidationError' && error.errors) {
+      console.error('  - Validation Errors:');
+      Object.keys(error.errors).forEach(field => {
+        console.error(`    - Field: ${field}`);
+        console.error(`    - Message: ${error.errors[field].message}`);
+        console.error(`    - Value: ${error.errors[field].value}`);
+      });
+    }
+    
+    console.error('❌ === FIN ERROR DISPOSITIVO ===');
+    
     res.status(500).json({
       success: false,
-      error: 'Error interno del servidor'
+      error: 'Error interno del servidor',
+      ...(process.env.NODE_ENV === 'development' && {
+        debug: {
+          name: error.name,
+          message: error.message,
+          code: error.code
+        }
+      })
     });
   }
 };
@@ -421,5 +461,87 @@ router.post('/unregister', verifyToken, unregisterDevice);
 // Rutas administrativas
 router.get('/admin/stats', getNotificationStats);
 router.post('/admin/send', sendCustomNotification);
+
+// Endpoint de prueba para notificaciones (solo desarrollo)
+router.post('/test', verifyToken, async (req, res) => {
+  try {
+    if (process.env.NODE_ENV !== 'development') {
+      return res.status(403).json({
+        success: false,
+        error: 'Endpoint solo disponible en desarrollo'
+      });
+    }
+
+    const userId = req.user.id;
+    const result = await pushNotificationService.sendTestNotification(userId);
+
+    res.json({
+      success: true,
+      message: 'Notificación de prueba enviada',
+      result
+    });
+
+  } catch (error) {
+    console.error('Error enviando notificación de prueba:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error enviando notificación de prueba'
+    });
+  }
+});
+
+// Endpoint para debug de tokens (solo desarrollo)
+router.get('/debug/tokens', verifyToken, async (req, res) => {
+  try {
+    if (process.env.NODE_ENV !== 'development') {
+      return res.status(403).json({
+        success: false,
+        error: 'Endpoint solo disponible en desarrollo'
+      });
+    }
+
+    const userId = req.user.id;
+    
+    // Obtener tokens del usuario actual
+    const userTokens = await DeviceToken.find({ userId }).populate('userId', 'name email role');
+    
+    // Obtener todos los tokens activos para debugging
+    const allActiveTokens = await DeviceToken.find({ isActive: true })
+      .populate('userId', 'name email role')
+      .sort({ lastUpdated: -1 })
+      .limit(20);
+
+    res.json({
+      success: true,
+      data: {
+        currentUser: {
+          userId,
+          role: req.user.role,
+          tokens: userTokens.map(token => ({
+            platform: token.platform,
+            isActive: token.isActive,
+            lastUpdated: token.lastUpdated,
+            tokenPrefix: token.deviceToken.substring(0, 15) + '...'
+          }))
+        },
+        allActiveTokens: allActiveTokens.map(token => ({
+          userId: token.userId._id,
+          userName: token.userId.name,
+          userRole: token.userId.role,
+          platform: token.platform,
+          lastUpdated: token.lastUpdated,
+          tokenPrefix: token.deviceToken.substring(0, 15) + '...'
+        }))
+      }
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo tokens de debug:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error obteniendo información de debug'
+    });
+  }
+});
 
 module.exports = router;

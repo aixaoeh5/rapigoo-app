@@ -29,11 +29,11 @@ const LoginComercianteScreen = () => {
       const token = await AsyncStorage.getItem('token');
       if (token) {
         console.log('🔓 Token ya existe, navegando a HomeComerciante');
-        navigation.navigate('HomeComerciante'); 
+        navigation.replace('HomeComerciante'); 
       }
     };
     checkToken();
-  }, []);
+  }, [navigation]);
 
 const handleLogin = async () => {
   try {

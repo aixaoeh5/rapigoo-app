@@ -8,8 +8,6 @@ import {
   Alert,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
 import Icon from 'react-native-vector-icons/Ionicons'; 
 const BusinessFormStep2Screen = () => {
   const navigation = useNavigation();
@@ -21,38 +19,22 @@ const BusinessFormStep2Screen = () => {
   const [closingHours, setClosingHours] = useState('');
   const [description, setDescription] = useState('');
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!openingHours || !closingHours || !description) {
       Alert.alert('Campos obligatorios', 'Por favor completa todos los campos.');
       return;
     }
 
-    try {
-      const token = await AsyncStorage.getItem('token');
-
-      const response = await axios.post('http://192.168.100.192:5000/api/merchant/profile', {
-        businessName,
-        rnc,
-        category,
-        address,
-        openHour: openingHours,  
-        closeHour: closingHours,  
-        description,
-      }, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      Alert.alert('✅ Enviado', 'Tu perfil de negocio está pendiente de aprobación.');
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'MerchantPendingApproval' }],
-      });
-    } catch (error) {
-      console.error('❌ Error al guardar el negocio:', error.response?.data?.message || error.message);
-      Alert.alert('Error', error.response?.data?.message || 'No se pudo guardar el perfil de negocio');
-    }
+    // Navegar al Step 3 para ubicación
+    navigation.navigate('BusinessFormStep3', {
+      businessName,
+      rnc,
+      category,
+      address,
+      openingHours,
+      closingHours,
+      description,
+    });
   };
 
   return (
@@ -89,7 +71,7 @@ const BusinessFormStep2Screen = () => {
       />
 
       <TouchableOpacity style={styles.button} onPress={handleSubmit}>
-        <Text style={styles.buttonText}>Enviar formulario</Text>
+        <Text style={styles.buttonText}>Continuar</Text>
       </TouchableOpacity>
     </View>
   );

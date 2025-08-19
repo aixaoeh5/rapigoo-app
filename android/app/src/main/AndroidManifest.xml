@@ -1,6 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+  <!-- FIX: Permisos de ubicación para Android 14+ -->
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+  <!-- FIX: Permisos para background location (Android 10+) -->
+  <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+  <!-- FIX: Permisos para Foreground Service (Android 14+) -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
   <uses-permission android:name="android.permission.RECORD_AUDIO"/>
@@ -18,6 +24,18 @@
     <meta-data android:name="expo.modules.updates.ENABLED" android:value="false"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0"/>
+    <meta-data
+      android:name="com.google.android.geo.API_KEY"
+      android:value="AIzaSyDqE-L2_sObvQVl5gWlJaRVF2rIzH5Ztkg"/>
+    <meta-data
+      android:name="com.google.android.gms.maps.v2.API_KEY"
+      android:value="AIzaSyDqE-L2_sObvQVl5gWlJaRVF2rIzH5Ztkg"/>
+    <!-- FIX: Servicio de ubicación en foreground para Android 14+ -->
+    <service
+      android:name=".LocationTrackingService"
+      android:exported="false"
+      android:foregroundServiceType="location" />
+    
     <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="portrait">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>

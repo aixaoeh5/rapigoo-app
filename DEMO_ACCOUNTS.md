@@ -78,8 +78,29 @@ Contraseña: 123456
 
 ### 3. CUENTA DELIVERY
 ```
-⚠️ No disponible - El rol delivery no está implementado en el sistema actual
+Email: carlos-delivery@rapigoo.com
+Contraseña: 123456
 ```
+**Información del delivery:**
+- Nombre: Carlos Delivery
+- Teléfono: 809-555-0300
+- Vehículo: Honda CB190R (Motocicleta)
+- Placa: H123456
+- Licencia: LIC789012
+- Status: Aprobado y disponible
+- Rating promedio: ⭐ 4.7 (45 entregas)
+- Zona de trabajo: Santo Domingo centro (15km radio)
+- Ubicación actual: Plaza de la Cultura
+
+**Funcionalidades disponibles:**
+- ✅ Ver pedidos disponibles para pickup
+- ✅ Tomar pedidos asignados
+- ✅ Navegación GPS a ubicación del comerciante
+- ✅ Confirmar llegada al pickup (verificación de proximidad)
+- ✅ Navegación GPS a ubicación del cliente
+- ✅ Actualizar estado de entrega en tiempo real
+- ✅ Ver historial de entregas
+- ✅ Gestionar disponibilidad (disponible/no disponible)
 
 ---
 

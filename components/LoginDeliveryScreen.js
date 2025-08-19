@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { getStatusBarHeight } from 'react-native-status-bar-height';
 import { useTheme } from './context/ThemeContext';
-import { apiClient } from '../api/apiClient';
+import apiClient from '../api/apiClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LoginDeliveryScreen = () => {
@@ -42,21 +42,38 @@ const LoginDeliveryScreen = () => {
                     return;
                 }
 
+                // Verificar estado de aprobación del delivery
+                if (userData.deliveryStatus !== 'aprobado') {
+                    if (userData.deliveryStatus === 'pendiente') {
+                        Alert.alert('Cuenta Pendiente', 'Tu cuenta de delivery está pendiente de aprobación. Te contactaremos pronto.');
+                        return;
+                    } else if (userData.deliveryStatus === 'suspendido') {
+                        Alert.alert('Cuenta Suspendida', 'Tu cuenta de delivery está suspendida. Contacta con soporte.');
+                        return;
+                    } else if (userData.deliveryStatus === 'rechazado') {
+                        Alert.alert('Cuenta Rechazada', 'Tu solicitud de delivery fue rechazada. Contacta con soporte.');
+                        return;
+                    } else {
+                        Alert.alert('Error', 'Tu cuenta de delivery no está activa. Contacta con soporte.');
+                        return;
+                    }
+                }
+
                 // Guardar datos del usuario con el token
                 const userDataWithToken = {
                     ...userData,
                     token: token
                 };
                 
-                await AsyncStorage.setItem('userToken', token);
+                await AsyncStorage.setItem('token', token);
                 await AsyncStorage.setItem('userData', JSON.stringify(userDataWithToken));
 
-                console.log('🚚 Login exitoso, navegando a DeliveryMap');
+                console.log('🚚 Login exitoso, navegando a HomeDelivery');
                 
                 // Resetear navegación para evitar volver al login
                 navigation.reset({
                     index: 0,
-                    routes: [{ name: 'DeliveryMap' }],
+                    routes: [{ name: 'HomeDelivery' }],
                 });
             } else {
                 Alert.alert('Error', response.data.message || 'Error al iniciar sesión');

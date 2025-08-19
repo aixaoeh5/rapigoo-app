@@ -11,7 +11,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { apiClient } from '../api/apiClient';
+import apiClient from '../api/apiClient';
 import { useTheme } from './context/ThemeContext';
 
 const HomeComercianteScreen = () => {
@@ -556,7 +556,10 @@ const HomeComercianteScreen = () => {
 
           <TouchableOpacity
             style={styles.optionCard}
-            onPress={() => {/* TODO: Implementar Analytics */}}
+            onPress={() => {
+              console.log('🔄 Botón Estadísticas presionado');
+              navigation.navigate('Analytics');
+            }}
           >
             <Icon name="bar-chart-outline" size={32} color="#9C27B0" />
             <Text style={styles.optionText}>Estadísticas</Text>

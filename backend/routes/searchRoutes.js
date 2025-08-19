@@ -5,6 +5,7 @@ const Joi = require('joi');
 const User = require('../models/User');
 const Service = require('../models/Service');
 
+
 // Esquema de validación para búsqueda
 const searchSchema = Joi.object({
   q: Joi.string().min(1).max(100).required().messages({
@@ -46,22 +47,16 @@ const performSearch = async (req, res) => {
     let results = [];
     let totalResults = 0;
 
-    // Construir regex para búsqueda
-    const searchRegex = new RegExp(q.split(' ').join('|'), 'i');
+    // Usar índices de texto de MongoDB para búsqueda optimizada
+    const textSearchQuery = { $text: { $search: q, $language: 'spanish' } };
 
     // Búsqueda de comerciantes
     if (type === 'all' || type === 'merchants') {
       const merchantQuery = {
         $and: [
           { merchantStatus: 'aprobado' },
-          {
-            $or: [
-              { 'business.businessName': searchRegex },
-              { 'business.category': searchRegex },
-              { 'business.description': searchRegex },
-              { name: searchRegex }
-            ]
-          }
+          { role: 'comerciante' },
+          textSearchQuery
         ]
       };
 
@@ -72,6 +67,22 @@ const performSearch = async (req, res) => {
 
       if (minRating) {
         merchantQuery.$and.push({ rating: { $gte: minRating } });
+      }
+
+      // Filtro geoespacial para comerciantes
+      if (location) {
+        const { latitude, longitude, radius } = location;
+        merchantQuery.$and.push({
+          'business.location': {
+            $near: {
+              $geometry: {
+                type: 'Point',
+                coordinates: [longitude, latitude]
+              },
+              $maxDistance: radius * 1000 // convertir km a metros
+            }
+          }
+        });
       }
 
       const merchants = await User.find(merchantQuery)
@@ -104,13 +115,7 @@ const performSearch = async (req, res) => {
       const serviceQuery = {
         $and: [
           { available: true },
-          {
-            $or: [
-              { name: searchRegex },
-              { description: searchRegex },
-              { tags: { $in: [searchRegex] } }
-            ]
-          }
+          textSearchQuery
         ]
       };
 

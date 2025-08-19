@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect, useState } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useState, useMemo, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiClient } from '../../api/apiClient';
 
@@ -57,34 +57,77 @@ export const CartProvider = ({ children }) => {
   const [state, dispatch] = useReducer(cartReducer, initialState);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Cargar carrito al iniciar (solo una vez y priorizar local)
+  // FIX: Cargar carrito al iniciar (solo una vez y priorizar local)
   useEffect(() => {
     if (!isInitialized) {
       console.log('🚀 Inicializando CartProvider...');
       // SIEMPRE priorizar carrito local primero
-      loadCartLocal().finally(() => setIsInitialized(true));
+      loadCartLocal().finally(() => {
+        console.log('✅ CartProvider inicializado');
+        setIsInitialized(true);
+      });
     }
-  }, [isInitialized]);
+  }, []); // FIX: Sin dependencias para evitar re-inicializaciones
 
-  // Persistir carrito cuando cambie
-  useEffect(() => {
-    if (state.items.length > 0) {
-      persistCartLocally();
-    }
-  }, [state.items]);
-
-  const persistCartLocally = async () => {
+  const persistCartLocally = async (cartData) => {
     try {
-      await AsyncStorage.setItem('cart', JSON.stringify({
-        items: state.items,
-        subtotal: state.subtotal,
-        deliveryFee: state.deliveryFee,
-        total: state.total
-      }));
+      await AsyncStorage.setItem('cart', JSON.stringify(cartData));
     } catch (error) {
       console.error('Error al persistir carrito:', error);
     }
   };
+
+  // Memoize cart state to prevent unnecessary re-renders
+  const cartState = useMemo(() => ({
+    items: state.items,
+    subtotal: state.subtotal,
+    deliveryFee: state.deliveryFee,
+    total: state.total
+  }), [state.items, state.subtotal, state.deliveryFee, state.total]);
+
+  // FIX: Persistir carrito cuando cambie (con debounce y ref para evitar bucles)
+  const persistenceTimeoutRef = useRef(null);
+  const lastPersistedStateRef = useRef(null);
+  
+  useEffect(() => {
+    if (!isInitialized) return;
+    
+    // FIX: Crear clave única del estado actual para comparar
+    const currentStateKey = JSON.stringify({
+      items: state.items.map(item => ({ id: item._id, quantity: item.quantity })),
+      subtotal: state.subtotal,
+      total: state.total
+    });
+    
+    // FIX: Solo persistir si el estado realmente cambió
+    if (lastPersistedStateRef.current !== currentStateKey) {
+      // Clear existing timeout
+      if (persistenceTimeoutRef.current) {
+        clearTimeout(persistenceTimeoutRef.current);
+      }
+      
+      // FIX: Debounce más agresivo para evitar múltiples writes
+      persistenceTimeoutRef.current = setTimeout(() => {
+        console.log('💾 Persistiendo carrito (cambio detectado)');
+        persistCartLocally({
+          items: state.items,
+          subtotal: state.subtotal,
+          deliveryFee: state.deliveryFee,
+          total: state.total
+        });
+        lastPersistedStateRef.current = currentStateKey;
+        persistenceTimeoutRef.current = null;
+      }, 1000); // Increased to 1 second
+    }
+    
+    // Cleanup timeout on unmount
+    return () => {
+      if (persistenceTimeoutRef.current) {
+        clearTimeout(persistenceTimeoutRef.current);
+        persistenceTimeoutRef.current = null;
+      }
+    };
+  }, [isInitialized, state.items.length, state.subtotal, state.total]); // FIX: Usar solo dependencias primitivas
 
   const loadCartLocal = async () => {
     console.log('📱 Cargando carrito desde AsyncStorage únicamente...');

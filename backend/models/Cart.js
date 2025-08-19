@@ -118,10 +118,10 @@ CartSchema.methods.removeItem = function(itemId) {
   return this.save();
 };
 
-// Método para limpiar carrito
-CartSchema.methods.clear = function() {
+// Método para limpiar carrito con soporte para transacciones
+CartSchema.methods.clear = function(options = {}) {
   this.items = [];
-  return this.save();
+  return this.save(options);
 };
 
 // Índices para optimización

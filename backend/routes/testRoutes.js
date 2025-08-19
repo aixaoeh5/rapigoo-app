@@ -126,4 +126,73 @@ router.post('/create-test-users', devOnly, async (req, res) => {
   }
 });
 
+// POST /api/test/delivery-transition - Simular transición de delivery para testing
+router.post('/delivery-transition', devOnly, async (req, res) => {
+  try {
+    const { deliveryId, newStatus, notes = 'Test transition' } = req.body;
+
+    if (!deliveryId || !newStatus) {
+      return res.status(400).json({
+        success: false,
+        error: 'deliveryId y newStatus son requeridos'
+      });
+    }
+
+    console.log('🧪 TEST: Simulando transición de delivery:', {
+      deliveryId,
+      newStatus,
+      notes
+    });
+
+    // Simular la validación que hacemos en delivery routes
+    const DeliveryTracking = require('../models/DeliveryTracking');
+    const delivery = await DeliveryTracking.findById(deliveryId);
+    
+    if (!delivery) {
+      return res.status(404).json({
+        success: false,
+        error: 'Delivery tracking no encontrado'
+      });
+    }
+
+    console.log('🧪 TEST: Estado actual:', delivery.status);
+    console.log('🧪 TEST: Transición intentada:', `${delivery.status} → ${newStatus}`);
+
+    // Verificar transiciones válidas
+    const validTransitions = {
+      assigned: ['heading_to_pickup', 'cancelled'],
+      heading_to_pickup: ['at_pickup', 'cancelled'],
+      at_pickup: ['picked_up', 'cancelled'],
+      picked_up: ['heading_to_delivery', 'at_delivery', 'cancelled'],
+      heading_to_delivery: ['at_delivery', 'cancelled'],
+      at_delivery: ['delivered', 'cancelled'],
+      delivered: [],
+      cancelled: []
+    };
+
+    const allowedTransitions = validTransitions[delivery.status] || [];
+    const isValidTransition = allowedTransitions.includes(newStatus);
+
+    res.json({
+      success: true,
+      data: {
+        currentStatus: delivery.status,
+        attemptedStatus: newStatus,
+        isValidTransition,
+        allowedTransitions,
+        message: isValidTransition ? 
+          'Transición válida' : 
+          `Transición inválida: ${delivery.status} → ${newStatus}`
+      }
+    });
+
+  } catch (error) {
+    console.error('🧪 TEST: Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

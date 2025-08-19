@@ -10,8 +10,8 @@ import {
   Alert
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import Icon from 'react-native-vector-icons/Ionicons';
-import { apiClient } from '../api/apiClient';
+import { Ionicons as Icon } from '@expo/vector-icons';
+import apiClient from '../api/apiClient';
 
 // Configuraciones de estados
 const ORDER_STATES = {
@@ -19,6 +19,10 @@ const ORDER_STATES = {
   confirmed: { title: 'Confirmado', color: '#4CAF50', icon: 'checkmark-circle-outline', bg: '#E8F5E8' },
   preparing: { title: 'Preparando', color: '#2196F3', icon: 'restaurant-outline', bg: '#E3F2FD' },
   ready: { title: 'Listo', color: '#FF9800', icon: 'cube-outline', bg: '#FFF8E1' },
+  assigned: { title: 'Asignado', color: '#9C27B0', icon: 'bicycle-outline', bg: '#F3E5F5' },
+  picked_up: { title: 'Recogido', color: '#FF9800', icon: 'bag-outline', bg: '#FFF8E1' },
+  in_transit: { title: 'En camino', color: '#4CAF50', icon: 'car-outline', bg: '#E8F5E8' },
+  delivered: { title: 'Entregado', color: '#4CAF50', icon: 'checkmark-done-outline', bg: '#E8F5E8' },
   completed: { title: 'Completado', color: '#4CAF50', icon: 'checkmark-done-outline', bg: '#E8F5E8' },
   cancelled: { title: 'Cancelado', color: '#F44336', icon: 'close-circle-outline', bg: '#FFEBEE' }
 };
@@ -44,17 +48,46 @@ const HistorialPedidosScreen = () => {
 
       const response = await apiClient.get('/orders', { params });
 
+      console.log('📋 Respuesta completa del servidor:', response.data);
+      
       if (response.data.success) {
-        setOrders(response.data.orders);
+        // Intentar múltiples formas de extraer los pedidos de la respuesta
+        let ordersData = [];
+        
+        if (response.data.data?.orders && Array.isArray(response.data.data.orders)) {
+          ordersData = response.data.data.orders;
+        } else if (response.data.orders && Array.isArray(response.data.orders)) {
+          ordersData = response.data.orders;
+        } else if (response.data.data && Array.isArray(response.data.data)) {
+          ordersData = response.data.data;
+        }
+        
+        console.log('📋 Pedidos extraídos:', ordersData);
+        setOrders(ordersData);
       } else {
-        Alert.alert('Error', 'No se pudieron cargar los pedidos');
+        // Respuesta no exitosa del servidor
+        console.warn('Respuesta no exitosa:', response.data);
+        setOrders([]);
       }
     } catch (error) {
       console.error('Error cargando pedidos:', error);
-      // No mostrar error en caso de que no haya pedidos
-      if (error.response?.status !== 404) {
-        Alert.alert('Error', 'Error al cargar pedidos');
+      
+      // Analizar tipo de error
+      const isNotFound = error.response?.status === 404;
+      const isNetworkError = !error.response;
+      const isServerError = error.response?.status >= 500;
+      
+      // Solo mostrar error si es grave (no mostrar para 404 o errores de red)
+      if (!isNotFound && !isNetworkError && isServerError) {
+        Alert.alert('Error', 'Error del servidor al cargar pedidos. Intenta de nuevo.');
+      } else if (isNetworkError) {
+        console.log('🌐 Error de conexión al cargar pedidos');
+      } else if (isNotFound) {
+        console.log('🔍 No se encontraron pedidos');
       }
+      
+      // En caso de error, asegurar que orders esté vacío
+      setOrders([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -67,7 +100,10 @@ const HistorialPedidosScreen = () => {
   };
 
   const handleOrderPress = (order) => {
-    navigation.navigate('OrderDetail', { orderId: order._id });
+    navigation.navigate('OrderTracking', { 
+      orderId: order._id,
+      orderNumber: order.orderNumber 
+    });
   };
 
   const formatDate = (dateString) => {
@@ -115,8 +151,13 @@ const HistorialPedidosScreen = () => {
   );
 
   const renderOrderItem = ({ item }) => {
-    const stateConfig = ORDER_STATES[item.status];
-    const totalItems = item.items.reduce((sum, orderItem) => sum + orderItem.quantity, 0);
+    const stateConfig = ORDER_STATES[item.status] || {
+      title: 'Desconocido',
+      color: '#666',
+      icon: 'help-outline',
+      bg: '#f5f5f5'
+    };
+    const totalItems = item.items?.reduce((sum, orderItem) => sum + (orderItem.quantity || 0), 0) || 0;
 
     return (
       <TouchableOpacity
@@ -126,7 +167,9 @@ const HistorialPedidosScreen = () => {
         <View style={styles.orderHeader}>
           <View style={styles.orderInfo}>
             <Text style={styles.orderNumber}>#{item.orderNumber}</Text>
-            <Text style={styles.merchantName}>{item.merchantName}</Text>
+            <Text style={styles.merchantName}>
+              {item.merchantId?.name || item.merchantId?.business?.businessName || 'Comerciante'}
+            </Text>
           </View>
           <View style={styles.orderMeta}>
             <Text style={styles.orderDate}>{getTimeSince(item.createdAt)}</Text>
@@ -139,7 +182,9 @@ const HistorialPedidosScreen = () => {
             {totalItems} item{totalItems > 1 ? 's' : ''} • ${(item.total || 0).toFixed(2)}
           </Text>
           <Text style={styles.paymentMethod}>
-            {item.paymentMethod === 'cash' ? '💵 Efectivo' : '🏦 Transferencia'}
+            {item.paymentInfo?.method === 'cash' ? '💵 Efectivo' : 
+             item.paymentInfo?.method === 'card' ? '💳 Tarjeta' : 
+             '🏦 Transferencia'}
           </Text>
         </View>
 
@@ -157,7 +202,7 @@ const HistorialPedidosScreen = () => {
         <View style={styles.itemsPreview}>
           {item.items.slice(0, 2).map((orderItem, index) => (
             <Text key={index} style={styles.itemPreview} numberOfLines={1}>
-              {orderItem.quantity}x {orderItem.serviceName}
+              {orderItem.quantity}x {orderItem.name || orderItem.serviceName}
             </Text>
           ))}
           {item.items.length > 2 && (

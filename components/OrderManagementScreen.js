@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { apiClient } from '../api/apiClient';
+import apiClient from '../api/apiClient';
 
 // Estados y sus configuraciones
 const ORDER_STATES = {
@@ -21,9 +21,128 @@ const ORDER_STATES = {
   confirmed: { title: 'Confirmado', color: '#4CAF50', icon: 'checkmark-circle-outline' },
   preparing: { title: 'Preparando', color: '#2196F3', icon: 'restaurant-outline' },
   ready: { title: 'Listo', color: '#FF9800', icon: 'cube-outline' },
-  completed: { title: 'Completado', color: '#4CAF50', icon: 'checkmark-done-outline' },
+  assigned: { title: 'Asignado', color: '#9C27B0', icon: 'person-add-outline' },
+  at_pickup: { title: 'En Local', color: '#FF9800', icon: 'location-outline' },
+  picked_up: { title: 'Recogido', color: '#4CAF50', icon: 'checkmark-circle' },
+  in_transit: { title: 'En Camino', color: '#FF9800', icon: 'car-outline' },
+  delivered: { title: 'Entregado', color: '#4CAF50', icon: 'checkmark-done-outline' },
   cancelled: { title: 'Cancelado', color: '#F44336', icon: 'close-circle-outline' }
 };
+
+// Utility functions
+const formatDate = (dateString) => {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('es-ES', { 
+    day: '2-digit', 
+    month: '2-digit', 
+    year: '2-digit' 
+  });
+};
+
+const formatTime = (dateString) => {
+  const date = new Date(dateString);
+  return date.toLocaleTimeString('es-ES', { 
+    hour: '2-digit', 
+    minute: '2-digit' 
+  });
+};
+
+const getTimeSinceOrder = (dateString) => {
+  const orderDate = new Date(dateString);
+  const now = new Date();
+  const diffInMinutes = Math.floor((now - orderDate) / (1000 * 60));
+  
+  if (diffInMinutes < 60) {
+    return `${diffInMinutes}m`;
+  } else if (diffInMinutes < 1440) {
+    const hours = Math.floor(diffInMinutes / 60);
+    return `${hours}h`;
+  } else {
+    const days = Math.floor(diffInMinutes / 1440);
+    return `${days}d`;
+  }
+};
+
+// Memoized OrderItem component for better performance
+const OrderItem = memo(({ item, onPress }) => {
+  const stateConfig = ORDER_STATES[item.status] || { title: 'Desconocido', color: '#666', icon: 'help-outline' };
+  const totalItems = item.items?.reduce((sum, orderItem) => sum + (orderItem.quantity || 0), 0) || 0;
+
+  return (
+    <TouchableOpacity
+      style={styles.orderCard}
+      onPress={() => onPress(item)}
+    >
+      <View style={styles.orderHeader}>
+        <View>
+          <Text style={styles.orderNumber}>#{item.orderNumber}</Text>
+          <Text style={styles.orderTime}>
+            {formatDate(item.createdAt)} • {formatTime(item.createdAt)}
+          </Text>
+        </View>
+        <View style={styles.orderHeaderRight}>
+          <View style={[styles.statusBadge, { backgroundColor: stateConfig.color }]}>
+            <Icon name={stateConfig.icon} size={12} color="#fff" />
+            <Text style={styles.statusText}>{stateConfig.title}</Text>
+          </View>
+          <Text style={styles.timeSince}>{getTimeSinceOrder(item.createdAt)}</Text>
+        </View>
+      </View>
+
+      <View style={styles.customerInfo}>
+        <Text style={styles.customerName}>👤 {item.customerInfo?.name || 'Cliente'}</Text>
+        <Text style={styles.customerPhone}>📞 {item.customerInfo?.phone || 'N/A'}</Text>
+      </View>
+
+      <View style={styles.orderDetails}>
+        <Text style={styles.itemsCount}>{totalItems} items • ${(item.total || 0).toFixed(2)}</Text>
+        <Text style={styles.paymentMethod}>
+          {item.paymentMethod === 'cash' ? '💵 Efectivo' : '🏦 Transferencia'}
+        </Text>
+      </View>
+
+      <Text style={styles.deliveryAddress} numberOfLines={1}>
+        📍 {typeof item.deliveryInfo?.address === 'string' 
+          ? item.deliveryInfo.address 
+          : item.deliveryInfo?.address?.street 
+            ? `${item.deliveryInfo.address.street}, ${item.deliveryInfo.address.city}` 
+            : 'Dirección no disponible'}
+      </Text>
+
+      {item.deliveryInfo?.instructions && (
+        <Text style={styles.instructions} numberOfLines={2}>
+          📝 {item.deliveryInfo.instructions}
+        </Text>
+      )}
+      
+      {/* NUEVO: Indicador de repartidor asignado */}
+      <View style={styles.deliveryStatus}>
+        {item.deliveryPersonId ? (
+          <View style={styles.deliveryAssigned}>
+            <Icon name="person-circle" size={16} color="#4CAF50" />
+            <Text style={styles.deliveryAssignedText}>
+              Repartidor: {item.deliveryPersonInfo?.name || 'Asignado'}
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.deliveryNotAssigned}>
+            <Icon name="person-add-outline" size={16} color="#FF9800" />
+            <Text style={styles.deliveryNotAssignedText}>
+              Sin repartidor asignado
+            </Text>
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+}, (prevProps, nextProps) => {
+  // Custom comparison function for better memoization
+  return (
+    prevProps.item._id === nextProps.item._id &&
+    prevProps.item.status === nextProps.item.status &&
+    prevProps.item.total === nextProps.item.total
+  );
+});
 
 const OrderManagementScreen = () => {
   const navigation = useNavigation();
@@ -31,7 +150,7 @@ const OrderManagementScreen = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedFilter, setSelectedFilter] = useState('pending');
+  const [selectedFilter, setSelectedFilter] = useState('ready_and_assigned');
   const [actionModalVisible, setActionModalVisible] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
 
@@ -39,13 +158,37 @@ const OrderManagementScreen = () => {
     loadOrders();
   }, [selectedFilter]);
 
-  const loadOrders = async () => {
+  const loadOrders = useCallback(async () => {
     try {
+      let statusParam;
+      
+      // FIX: Manejar filtros compuestos para el comerciante
+      if (selectedFilter === 'all') {
+        statusParam = undefined; // Todos los estados
+      } else if (selectedFilter === 'ready_and_assigned') {
+        // FIX: Incluir ready, assigned, at_pickup y picked_up para que el comerciante vea pedidos pendientes de entrega
+        statusParam = 'ready,assigned,at_pickup,picked_up';
+      } else {
+        statusParam = selectedFilter;
+      }
+      
+      console.log('🔍 [DEBUG FRONTEND] Parámetros de la petición:', {
+        selectedFilter,
+        statusParam,
+        url: '/orders/merchant/list'
+      });
+      
       const response = await apiClient.get('/orders/merchant/list', {
         params: {
-          status: selectedFilter === 'all' ? undefined : selectedFilter,
+          status: statusParam,
           limit: 50
         }
+      });
+      
+      console.log('🔍 [DEBUG FRONTEND] Respuesta recibida:', {
+        success: response.data.success,
+        ordersCount: response.data.orders?.length || 0,
+        firstOrder: response.data.orders?.[0]?.orderNumber || 'ninguno'
       });
 
       if (response.data.success) {
@@ -72,17 +215,23 @@ const OrderManagementScreen = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [selectedFilter]);
 
-  const onRefresh = () => {
+  const onRefresh = useCallback(() => {
     setRefreshing(true);
     loadOrders();
-  };
+  }, [loadOrders]);
 
-  const handleOrderPress = (order) => {
+  const handleOrderPress = useCallback((order) => {
     setSelectedOrder(order);
     setActionModalVisible(true);
-  };
+  }, []);
+
+  const renderOrderItem = useCallback(({ item }) => (
+    <OrderItem item={item} onPress={handleOrderPress} />
+  ), [handleOrderPress]);
+
+  const keyExtractor = useCallback((item) => item._id, []);
 
   const getAvailableActions = (status) => {
     const actions = {
@@ -100,6 +249,18 @@ const OrderManagementScreen = () => {
       ],
       ready: [
         { action: 'completed', title: 'Marcar como entregado', color: '#4CAF50', icon: 'checkmark-done' }
+      ],
+      assigned: [
+        // Solo informativo - El delivery debe llegar primero
+      ],
+      at_pickup: [
+        { action: 'picked_up', title: 'Entregar al delivery', color: '#4CAF50', icon: 'checkmark-done' }
+      ],
+      picked_up: [
+        // El delivery ya recogió el pedido, el comerciante ya no puede hacer nada
+      ],
+      in_transit: [
+        // El delivery está en camino, el comerciante ya no puede hacer nada
       ]
     };
     
@@ -108,6 +269,12 @@ const OrderManagementScreen = () => {
 
   const handleStatusUpdate = async (newStatus) => {
     if (!selectedOrder) return;
+
+    // VALIDACIÓN ESPECIAL: Si intenta marcar como entregado sin delivery asignado
+    if (newStatus === 'completed' && !selectedOrder.deliveryPersonId) {
+      showNoDeliveryAssignedAlert();
+      return;
+    }
 
     try {
       const response = await apiClient.put(`/orders/${selectedOrder._id}/status`, {
@@ -144,6 +311,96 @@ const OrderManagementScreen = () => {
       
       Alert.alert('Error', errorMessage);
     }
+  };
+
+  // NUEVO: Popup elegante para cuando no hay delivery asignado
+  const showNoDeliveryAssignedAlert = () => {
+    Alert.alert(
+      '🚚 ¿Asignar Repartidor?',
+      'Este pedido aún no tiene un repartidor asignado. Para marcarlo como entregado, primero necesitas asignar un repartidor o cambiar el tipo de entrega.',
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+          onPress: () => {
+            setActionModalVisible(false);
+            setSelectedOrder(null);
+          }
+        },
+        {
+          text: '📅 Asignar Repartidor',
+          onPress: () => {
+            setActionModalVisible(false);
+            navigateToDeliveryAssignment();
+          }
+        },
+        {
+          text: '🏠 Entrega Directa',
+          onPress: () => {
+            confirmDirectDelivery();
+          }
+        }
+      ],
+      { 
+        cancelable: true,
+        onDismiss: () => {
+          setActionModalVisible(false);
+          setSelectedOrder(null);
+        }
+      }
+    );
+  };
+
+  // NUEVO: Navegar a asignación de delivery
+  const navigateToDeliveryAssignment = () => {
+    // Aquí puedes navegar a una pantalla de asignación de delivery
+    // Por ahora, mostrar mensaje informativo
+    Alert.alert(
+      '🚧 Funcionalidad en Desarrollo',
+      'La asignación automática de repartidores estará disponible pronto. Por ahora, puedes marcar como entrega directa.',
+      [{ text: 'Entendido' }]
+    );
+    setSelectedOrder(null);
+  };
+
+  // NUEVO: Confirmar entrega directa (sin repartidor)
+  const confirmDirectDelivery = () => {
+    Alert.alert(
+      '🏠 Confirmar Entrega Directa',
+      '¿El cliente recogió el pedido directamente en tu local?',
+      [
+        {
+          text: 'No, cancelar',
+          style: 'cancel',
+          onPress: () => setSelectedOrder(null)
+        },
+        {
+          text: 'Sí, entregar',
+          style: 'default',
+          onPress: async () => {
+            try {
+              const response = await apiClient.put(`/orders/${selectedOrder._id}/status`, {
+                status: 'completed',
+                deliveryType: 'pickup', // Marcar como recogida en local
+                notes: 'Entrega directa - Cliente recogió en el local'
+              });
+
+              if (response.data.success) {
+                Alert.alert('✅ Éxito', 'Pedido marcado como entregado (recogida directa)');
+                setActionModalVisible(false);
+                setSelectedOrder(null);
+                loadOrders();
+              } else {
+                Alert.alert('Error', response.data.error);
+              }
+            } catch (error) {
+              console.error('❌ Error en entrega directa:', error);
+              Alert.alert('Error', 'No se pudo completar la entrega directa');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const formatTime = (dateString) => {
@@ -191,59 +448,6 @@ const OrderManagementScreen = () => {
     </TouchableOpacity>
   );
 
-  const renderOrderItem = ({ item }) => {
-    const stateConfig = ORDER_STATES[item.status] || { title: 'Desconocido', color: '#666', icon: 'help-outline' };
-    const totalItems = item.items?.reduce((sum, orderItem) => sum + (orderItem.quantity || 0), 0) || 0;
-
-    return (
-      <TouchableOpacity
-        style={styles.orderCard}
-        onPress={() => handleOrderPress(item)}
-      >
-        <View style={styles.orderHeader}>
-          <View>
-            <Text style={styles.orderNumber}>#{item.orderNumber}</Text>
-            <Text style={styles.orderTime}>
-              {formatDate(item.createdAt)} • {formatTime(item.createdAt)}
-            </Text>
-          </View>
-          <View style={styles.orderHeaderRight}>
-            <View style={[styles.statusBadge, { backgroundColor: stateConfig.color }]}>
-              <Icon name={stateConfig.icon} size={12} color="#fff" />
-              <Text style={styles.statusText}>{stateConfig.title}</Text>
-            </View>
-            <Text style={styles.timeSince}>{getTimeSinceOrder(item.createdAt)}</Text>
-          </View>
-        </View>
-
-        <View style={styles.customerInfo}>
-          <Text style={styles.customerName}>👤 {item.customerInfo?.name || 'Cliente'}</Text>
-          <Text style={styles.customerPhone}>📞 {item.customerInfo?.phone || 'N/A'}</Text>
-        </View>
-
-        <View style={styles.orderDetails}>
-          <Text style={styles.itemsCount}>{totalItems} items • ${(item.total || 0).toFixed(2)}</Text>
-          <Text style={styles.paymentMethod}>
-            {item.paymentMethod === 'cash' ? '💵 Efectivo' : '🏦 Transferencia'}
-          </Text>
-        </View>
-
-        <Text style={styles.deliveryAddress} numberOfLines={1}>
-          📍 {typeof item.deliveryInfo?.address === 'string' 
-            ? item.deliveryInfo.address 
-            : item.deliveryInfo?.address?.street 
-              ? `${item.deliveryInfo.address.street}, ${item.deliveryInfo.address.city}` 
-              : 'Dirección no disponible'}
-        </Text>
-
-        {item.deliveryInfo?.instructions && (
-          <Text style={styles.instructions} numberOfLines={2}>
-            📝 {item.deliveryInfo.instructions}
-          </Text>
-        )}
-      </TouchableOpacity>
-    );
-  };
 
   if (loading) {
     return (
@@ -277,7 +481,7 @@ const OrderManagementScreen = () => {
         {renderFilterButton('pending', 'Pendientes')}
         {renderFilterButton('confirmed', 'Confirmados')}
         {renderFilterButton('preparing', 'Preparando')}
-        {renderFilterButton('ready', 'Listos')}
+        {renderFilterButton('ready_and_assigned', 'Listos y Asignados')}
         {renderFilterButton('completed', 'Completados')}
         {renderFilterButton('all', 'Todos')}
       </ScrollView>
@@ -285,7 +489,7 @@ const OrderManagementScreen = () => {
       {/* Lista de pedidos */}
       <FlatList
         data={orders}
-        keyExtractor={(item) => item._id}
+        keyExtractor={keyExtractor}
         renderItem={renderOrderItem}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -331,6 +535,46 @@ const OrderManagementScreen = () => {
                 </View>
 
                 <Text style={styles.actionsTitle}>Acciones disponibles:</Text>
+                
+                {/* Mensaje especial para pedido assigned */}
+                {selectedOrder.status === 'assigned' && (
+                  <View style={styles.infoMessage}>
+                    <Icon name="information-circle" size={20} color="#2196F3" />
+                    <Text style={styles.infoMessageText}>
+                      El delivery está en camino. Espera a que llegue al restaurante para poder entregar el pedido.
+                    </Text>
+                  </View>
+                )}
+                
+                {/* Mensaje especial para pedido at_pickup */}
+                {selectedOrder.status === 'at_pickup' && (
+                  <View style={styles.infoMessage}>
+                    <Icon name="location" size={20} color="#FF9800" />
+                    <Text style={styles.infoMessageText}>
+                      El delivery llegó al restaurante. Puedes entregar el pedido ahora.
+                    </Text>
+                  </View>
+                )}
+                
+                {/* Mensaje especial para pedido picked_up */}
+                {selectedOrder.status === 'picked_up' && (
+                  <View style={styles.infoMessage}>
+                    <Icon name="checkmark-circle" size={20} color="#4CAF50" />
+                    <Text style={styles.infoMessageText}>
+                      El delivery ya recogió el pedido y está en camino hacia el cliente.
+                    </Text>
+                  </View>
+                )}
+                
+                {/* Mensaje especial para pedido in_transit */}
+                {selectedOrder.status === 'in_transit' && (
+                  <View style={styles.infoMessage}>
+                    <Icon name="car" size={20} color="#FF9800" />
+                    <Text style={styles.infoMessageText}>
+                      El pedido está en camino hacia el cliente. Pronto será entregado.
+                    </Text>
+                  </View>
+                )}
                 
                 {getAvailableActions(selectedOrder.status).map((action, index) => (
                   <TouchableOpacity
@@ -549,6 +793,61 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
     fontStyle: 'italic',
+  },
+  // NUEVOS ESTILOS: Indicadores de repartidor
+  deliveryStatus: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  deliveryAssigned: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e8f5e8',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  deliveryAssignedText: {
+    fontSize: 12,
+    color: '#2e7d32',
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  deliveryNotAssigned: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff3e0',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  deliveryNotAssignedText: {
+    fontSize: 12,
+    color: '#ef6c00',
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  // NUEVOS ESTILOS: Mensaje informativo
+  infoMessage: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#e3f2fd',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 15,
+    borderLeftWidth: 4,
+    borderLeftColor: '#2196F3',
+  },
+  infoMessageText: {
+    fontSize: 14,
+    color: '#1565c0',
+    marginLeft: 10,
+    flex: 1,
+    lineHeight: 20,
   },
   emptyContainer: {
     alignItems: 'center',

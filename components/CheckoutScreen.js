@@ -9,9 +9,11 @@ import {
   Alert,
   ActivityIndicator
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useCart } from './context/CartContext';
-import { apiClient } from '../api/apiClient';
+import apiClient from '../api/apiClient';
+import NotificationService from '../services/NotificationService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CheckoutScreen = () => {
   const navigation = useNavigation();
@@ -26,10 +28,22 @@ const CheckoutScreen = () => {
   const [deliveryInstructions, setDeliveryInstructions] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [userDeliveryData, setUserDeliveryData] = useState(null);
 
   useEffect(() => {
+    // Inicializar servicio de notificaciones al entrar al checkout
+    NotificationService.initialize();
     loadCartSummary();
+    loadUserDeliveryAddress();
   }, []);
+
+  // Recargar datos cada vez que la pantalla se enfoca
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('🔄 Checkout screen focused - recargando datos...');
+      loadUserDeliveryAddress(); // Recargar dirección de entrega
+    }, [])
+  );
 
   const loadCartSummary = async () => {
     setLoading(true);
@@ -60,9 +74,108 @@ const CheckoutScreen = () => {
     }
   };
 
+  const loadUserDeliveryAddress = async () => {
+    try {
+      console.log('📍 Cargando dirección de entrega del usuario...');
+      
+      // Primero intentar cargar desde el servidor (más actualizado)
+      try {
+        const response = await apiClient.get('/auth/user');
+        console.log('📍 Datos del servidor:', response.data);
+        
+        if (response.data.deliveryAddress && response.data.deliveryAddress.coordinates && response.data.deliveryAddress.coordinates.length === 2) {
+          console.log('✅ Dirección encontrada en servidor:', {
+            street: response.data.deliveryAddress.street,
+            coordinates: response.data.deliveryAddress.coordinates,
+            city: response.data.deliveryAddress.city
+          });
+          setUserDeliveryData(response.data.deliveryAddress);
+          setDeliveryInstructions(response.data.deliveryAddress.instructions || '');
+          
+          // Actualizar AsyncStorage con datos del servidor
+          const userData = await AsyncStorage.getItem('userData');
+          if (userData) {
+            const user = JSON.parse(userData);
+            user.deliveryAddress = response.data.deliveryAddress;
+            await AsyncStorage.setItem('userData', JSON.stringify(user));
+            console.log('✅ AsyncStorage actualizado con dirección del servidor');
+          }
+        } else {
+          console.log('⚠️ No hay dirección válida en el servidor');
+          console.log('📍 Datos recibidos:', {
+            hasDeliveryAddress: !!response.data.deliveryAddress,
+            hasCoordinates: !!response.data.deliveryAddress?.coordinates,
+            coordinatesLength: response.data.deliveryAddress?.coordinates?.length,
+            street: response.data.deliveryAddress?.street
+          });
+          setUserDeliveryData(null);
+        }
+        
+        // Cargar teléfono del usuario
+        if (response.data.phone) {
+          setCustomerPhone(response.data.phone);
+        }
+        
+      } catch (serverError) {
+        console.log('⚠️ Error del servidor, intentando AsyncStorage...');
+        
+        // Fallback a AsyncStorage
+        const userData = await AsyncStorage.getItem('userData');
+        if (userData) {
+          const user = JSON.parse(userData);
+          
+          if (user.deliveryAddress && user.deliveryAddress.coordinates && user.deliveryAddress.coordinates.length === 2) {
+            console.log('✅ Dirección encontrada en AsyncStorage:', {
+              street: user.deliveryAddress.street,
+              coordinates: user.deliveryAddress.coordinates,
+              city: user.deliveryAddress.city
+            });
+            setUserDeliveryData(user.deliveryAddress);
+            setDeliveryInstructions(user.deliveryAddress.instructions || '');
+          } else {
+            console.log('⚠️ No hay dirección válida en AsyncStorage tampoco');
+            console.log('📍 Datos de AsyncStorage:', {
+              hasDeliveryAddress: !!user.deliveryAddress,
+              hasCoordinates: !!user.deliveryAddress?.coordinates,
+              coordinatesLength: user.deliveryAddress?.coordinates?.length,
+              street: user.deliveryAddress?.street
+            });
+            setUserDeliveryData(null);
+          }
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Error cargando dirección del usuario:', error);
+      setUserDeliveryData(null);
+    }
+  };
+
   const validateForm = () => {
-    if (!deliveryAddress.trim()) {
-      Alert.alert('Error', 'Por favor ingresa la dirección de entrega');
+    if (!userDeliveryData || !userDeliveryData.coordinates || userDeliveryData.coordinates.length !== 2) {
+      Alert.alert('Dirección requerida', 'Por favor configura tu dirección de entrega antes de continuar', [
+        {
+          text: 'Configurar ahora',
+          onPress: () => navigation.navigate('ClientLocationSetup')
+        },
+        {
+          text: 'Cancelar',
+          style: 'cancel'
+        }
+      ]);
+      return false;
+    }
+    if (!userDeliveryData.street || !userDeliveryData.street.trim()) {
+      Alert.alert('Dirección incompleta', 'Por favor completa tu dirección de entrega', [
+        {
+          text: 'Editar dirección',
+          onPress: () => navigation.navigate('ClientLocationSetup', { isEditing: true })
+        },
+        {
+          text: 'Cancelar',
+          style: 'cancel'
+        }
+      ]);
       return false;
     }
     if (!customerPhone.trim()) {
@@ -93,34 +206,46 @@ const CheckoutScreen = () => {
     setPlacing(true);
     
     try {
+      // Validar que tenemos coordenadas de entrega válidas
+      if (!userDeliveryData || !userDeliveryData.coordinates || userDeliveryData.coordinates.length !== 2) {
+        Alert.alert('Error', 'No se pudo obtener tu ubicación de entrega. Por favor configura tu dirección.');
+        return;
+      }
+      
+      // Validar que las coordenadas son números válidos
+      const [longitude, latitude] = userDeliveryData.coordinates;
+      if (typeof longitude !== 'number' || typeof latitude !== 'number' || 
+          longitude === 0 || latitude === 0 || 
+          isNaN(longitude) || isNaN(latitude)) {
+        Alert.alert('Error', 'Coordenadas de entrega inválidas. Por favor configura tu dirección nuevamente.');
+        return;
+      }
+      
+      // Validar que tenemos una dirección completa
+      if (!userDeliveryData.street || !userDeliveryData.street.trim()) {
+        Alert.alert('Error', 'Dirección de entrega incompleta. Por favor completa tu dirección.');
+        return;
+      }
+
       // Construir datos del pedido en el formato que espera el backend
       const orderData = {
-        merchantId: cartSummary.merchant.id,
-        items: cartSummary.items.map(item => ({
-          serviceId: item.serviceId,
-          quantity: item.quantity,
-          specialInstructions: item.specialInstructions || '',
-          options: item.options || []
-        })),
         deliveryInfo: {
           address: {
-            street: deliveryAddress.trim(),
-            city: 'Ciudad', // Valor por defecto
-            state: 'Estado', // Valor por defecto  
-            zipCode: '00000', // Valor por defecto
-            coordinates: [-69.5, -18.5] // Coordenadas por defecto
+            street: userDeliveryData.street,
+            city: userDeliveryData.city || 'Santo Domingo',
+            state: userDeliveryData.state || 'Distrito Nacional',  
+            zipCode: userDeliveryData.zipCode || '10101',
+            coordinates: userDeliveryData.coordinates
           },
           instructions: deliveryInstructions.trim(),
           contactPhone: customerPhone.trim()
         },
-        paymentInfo: {
-          method: paymentMethod,
-          ...(paymentMethod === 'card' && {
-            transactionId: 'test_transaction_' + Date.now()
-          })
-        },
-        notes: deliveryInstructions.trim(),
-        platform: 'mobile'
+        paymentMethod: paymentMethod,
+        customerInfo: {
+          phone: customerPhone.trim(),
+          deliveryAddress: `${userDeliveryData.street}, ${userDeliveryData.city || 'Santo Domingo'}`,
+          deliveryInstructions: deliveryInstructions.trim()
+        }
       };
 
       console.log('📋 Enviando datos del pedido:', JSON.stringify(orderData, null, 2));
@@ -136,11 +261,24 @@ const CheckoutScreen = () => {
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
 
-      const response = await apiClient.post('/orders', orderData);
+      const response = await apiClient.post('/orders/checkout', orderData);
       
       if (response.data.success) {
         // Limpiar carrito
         await clearCart();
+        
+        // Enviar notificación local inmediata
+        NotificationService.sendLocalNotification({
+          channelId: 'rapigoo-orders',
+          title: '✅ Pedido creado exitosamente',
+          message: `Tu pedido #${response.data.order.orderNumber} ha sido enviado al comerciante`,
+          data: {
+            type: 'order_update',
+            orderId: response.data.order._id,
+            orderNumber: response.data.order.orderNumber,
+            status: 'pending'
+          }
+        });
         
         // Navegar a pantalla de confirmación
         navigation.reset({
@@ -222,36 +360,71 @@ const CheckoutScreen = () => {
         ))}
       </View>
 
-      {/* Información de entrega */}
+      {/* Dirección de entrega configurada */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Información de entrega</Text>
-        
-        <Text style={styles.inputLabel}>Dirección de entrega *</Text>
-        <TextInput
-          style={styles.textInput}
-          value={deliveryAddress}
-          onChangeText={setDeliveryAddress}
-          placeholder="Ingresa tu dirección completa"
-          multiline
-        />
+        <Text style={styles.sectionTitle}>Dirección de entrega</Text>
 
-        <Text style={styles.inputLabel}>Instrucciones (opcional)</Text>
-        <TextInput
-          style={styles.textInput}
-          value={deliveryInstructions}
-          onChangeText={setDeliveryInstructions}
-          placeholder="Piso, apartamento, referencias..."
-          multiline
-        />
+        {userDeliveryData ? (
+          <View style={styles.deliveryAddressContainer}>
+            <View style={styles.addressCard}>
+              <View style={styles.addressHeader}>
+                <View style={styles.locationIcon}>
+                  <Text style={styles.locationIconText}>📍</Text>
+                </View>
+                <View style={styles.addressInfo}>
+                  <Text style={styles.addressTitle}>Tu ubicación guardada</Text>
+                  <Text style={styles.addressText}>
+                    {userDeliveryData.street}
+                    {userDeliveryData.city && `, ${userDeliveryData.city}`}
+                  </Text>
+                  {userDeliveryData.landmarks && (
+                    <Text style={styles.landmarksText}>
+                      📍 {userDeliveryData.landmarks}
+                    </Text>
+                  )}
+                </View>
+                <TouchableOpacity 
+                  onPress={() => navigation.navigate('ClientLocationSetup', { isEditing: true })}
+                  style={styles.editButton}
+                >
+                  <Text style={styles.editButtonText}>Editar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
 
-        <Text style={styles.inputLabel}>Teléfono de contacto *</Text>
-        <TextInput
-          style={styles.textInput}
-          value={customerPhone}
-          onChangeText={setCustomerPhone}
-          placeholder="Ej: 8091234567"
-          keyboardType="phone-pad"
-        />
+            <Text style={styles.inputLabel}>Instrucciones para el delivery (opcional)</Text>
+            <TextInput
+              style={styles.textInput}
+              value={deliveryInstructions}
+              onChangeText={setDeliveryInstructions}
+              placeholder="Ej: Apartamento 3B, tocar timbre, casa azul..."
+              multiline
+              numberOfLines={2}
+            />
+
+            <Text style={styles.inputLabel}>Teléfono de contacto *</Text>
+            <TextInput
+              style={styles.textInput}
+              value={customerPhone}
+              onChangeText={setCustomerPhone}
+              placeholder="Ej: 8091234567"
+              keyboardType="phone-pad"
+            />
+          </View>
+        ) : (
+          <View style={styles.noAddressContainer}>
+            <Text style={styles.noAddressTitle}>⚠️ Ubicación requerida</Text>
+            <Text style={styles.noAddressText}>
+              Necesitas configurar tu dirección de entrega antes de hacer un pedido
+            </Text>
+            <TouchableOpacity 
+              style={styles.configureLocationButton}
+              onPress={() => navigation.navigate('ClientLocationSetup')}
+            >
+              <Text style={styles.configureLocationText}>Configurar mi ubicación</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {/* Método de pago */}
@@ -511,6 +684,97 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 30,
+  },
+  deliveryAddressContainer: {
+    marginBottom: 0,
+  },
+  addressCard: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  addressHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  locationIcon: {
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locationIconText: {
+    fontSize: 24,
+  },
+  addressInfo: {
+    flex: 1,
+  },
+  addressTitle: {
+    fontSize: 14,
+    color: '#4CAF50',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  addressText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  landmarksText: {
+    fontSize: 13,
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  editButton: {
+    backgroundColor: '#FF6B6B',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  editButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  noAddressContainer: {
+    backgroundColor: '#fff3cd',
+    borderRadius: 12,
+    padding: 20,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ffeaa7',
+  },
+  noAddressTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#856404',
+    marginBottom: 8,
+  },
+  noAddressText: {
+    fontSize: 14,
+    color: '#856404',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  configureLocationButton: {
+    backgroundColor: '#FF6B6B',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  configureLocationText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 

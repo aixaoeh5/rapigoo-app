@@ -1,82 +1,117 @@
 const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+
+// Cargar variables de entorno
+dotenv.config();
+
+// Importar modelos
 const Order = require('./models/Order');
 const User = require('./models/User');
-require('dotenv').config();
+const Service = require('./models/Service');
 
 async function createTestOrder() {
   try {
-    await mongoose.connect(process.env.MONGO_URI);
+    console.log('🔄 Conectando a MongoDB...');
+    
+    // Conectar a la base de datos
+    await mongoose.connect(process.env.MONGO_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    
     console.log('✅ Conectado a MongoDB');
-
-    // Find merchant
-    const merchant = await User.findOne({ email: 'comerciante@test.com' });
-    if (!merchant) {
-      console.log('❌ No se encontró el comerciante');
-      return;
-    }
-    console.log('👤 Comerciante encontrado:', merchant.name);
-
-    // Find a customer
-    let customer = await User.findOne({ email: 'cliente@test.com' });
+    
+    // Buscar un cliente (consumidor)
+    const customer = await User.findOne({ role: 'cliente' });
     if (!customer) {
-      customer = new User({
-        name: 'Cliente Prueba',
-        email: 'cliente@test.com',
-        phone: '+1234567890',
-        role: 'customer'
-      });
-      await customer.save();
-      console.log('✅ Cliente de prueba creado');
+      console.log('❌ No se encontró ningún cliente en la base de datos');
+      process.exit(1);
     }
-
-    // Create test order with all required fields
-    const testOrder = new Order({
+    
+    // Buscar un comerciante
+    const merchant = await User.findOne({ role: 'comerciante' });
+    if (!merchant) {
+      console.log('❌ No se encontró ningún comerciante en la base de datos');
+      process.exit(1);
+    }
+    
+    console.log(`👤 Cliente: ${customer.name} (${customer.email})`);
+    console.log(`🏪 Comerciante: ${merchant.name} (${merchant.email})`);
+    
+    // Crear order items ficticios
+    const orderItems = [
+      {
+        serviceId: new mongoose.Types.ObjectId(),
+        name: 'Producto Test 1',
+        quantity: 2,
+        price: 15.50,
+        subtotal: 15.50 * 2
+      },
+      {
+        serviceId: new mongoose.Types.ObjectId(),
+        name: 'Producto Test 2',
+        quantity: 1,
+        price: 25.00,
+        subtotal: 25.00 * 1
+      }
+    ];
+    
+    const subtotal = orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const deliveryFee = 5;
+    const total = subtotal + deliveryFee;
+    
+    // Crear el pedido
+    const newOrder = new Order({
+      orderNumber: `ORD-${Date.now()}`,
       customerId: customer._id,
       merchantId: merchant._id,
-      orderNumber: 'TEST-' + Date.now(),
-      items: [
-        {
-          serviceId: new mongoose.Types.ObjectId(),
-          name: 'Pizza Margherita',
-          description: 'Pizza con salsa de tomate, mozzarella y albahaca',
-          price: 15.99,
-          quantity: 2,
-          subtotal: 31.98
-        }
-      ],
-      subtotal: 31.98,
-      deliveryFee: 3.50,
-      serviceFee: 1.75,
-      tax: 3.72,
-      total: 40.95,
+      items: orderItems,
+      subtotal: subtotal,
+      deliveryFee: deliveryFee,
+      total: total,
       status: 'pending',
-      deliveryInfo: {
-        address: {
-          street: 'Calle Principal 123',
-          city: 'Santo Domingo',
-          state: 'Distrito Nacional',
-          zipCode: '10101',
-          coordinates: [-69.9312, 18.4861]
-        },
-        instructions: 'Casa azul con portón blanco',
-        contactPhone: '+1234567890'
-      },
       paymentInfo: {
         method: 'cash',
-        amount: 40.95,
-        status: 'pending'
+        status: 'pending',
+        amount: total
       },
-      platform: 'mobile'
+      deliveryAddress: {
+        street: 'Calle Prueba 123',
+        city: 'Ciudad Prueba',
+        coordinates: {
+          latitude: -12.0464,
+          longitude: -77.0428
+        }
+      },
+      customerInfo: {
+        name: customer.name,
+        phone: customer.phone || '987654321',
+        email: customer.email
+      },
+      merchantInfo: {
+        name: merchant.name,
+        businessName: merchant.business?.businessName || merchant.name,
+        address: merchant.business?.address || 'Dirección del negocio',
+        phone: merchant.business?.phone || merchant.phone || '123456789'
+      }
     });
-
-    await testOrder.save();
-    console.log('✅ Orden de prueba creada:', testOrder.orderNumber);
-
-    await mongoose.disconnect();
+    
+    await newOrder.save();
+    
+    console.log('✅ Pedido de prueba creado exitosamente:');
+    console.log(`   - Order Number: ${newOrder.orderNumber}`);
+    console.log(`   - Customer ID: ${newOrder.customerId}`);
+    console.log(`   - Merchant ID: ${newOrder.merchantId}`);
+    console.log(`   - Total: $${newOrder.total}`);
+    console.log(`   - Items: ${newOrder.items.length}`);
+    
+    process.exit(0);
+    
   } catch (error) {
-    console.error('❌ Error:', error);
-    await mongoose.disconnect();
+    console.error('❌ Error creando pedido de prueba:', error);
+    process.exit(1);
   }
 }
 
+// Ejecutar la función
 createTestOrder();

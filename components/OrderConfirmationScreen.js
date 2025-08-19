@@ -10,7 +10,10 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { apiClient } from '../api/apiClient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import apiClient from '../api/apiClient';
+import useOrderNotifications from '../hooks/useOrderNotifications';
+import NotificationService from '../services/NotificationService';
 
 const OrderConfirmationScreen = () => {
   const navigation = useNavigation();
@@ -19,15 +22,43 @@ const OrderConfirmationScreen = () => {
 
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  // Hook para notificaciones de pedidos
+  const { checkOrderStatus } = useOrderNotifications(orderId);
 
   useEffect(() => {
+    // Inicializar servicio de notificaciones
+    const initNotifications = async () => {
+      await NotificationService.initialize();
+      
+      // Enviar notificación de bienvenida si es la primera vez
+      const isFirstTime = await AsyncStorage.getItem('notifications_welcomed');
+      if (!isFirstTime) {
+        setTimeout(() => {
+          NotificationService.sendWelcomeNotification();
+        }, 2000); // Esperar 2 segundos
+        await AsyncStorage.setItem('notifications_welcomed', 'true');
+      }
+    };
+    
+    initNotifications();
+    
     if (orderId) {
       loadOrderDetails();
+      
+      // Enviar notificación de confirmación de pedido
+      setTimeout(() => {
+        NotificationService.notifyOrderUpdate(
+          orderNumber,
+          'confirmed',
+          '¡Tu pedido ha sido confirmado! Te notificaremos cuando esté listo.'
+        );
+      }, 1000); // Esperar 1 segundo para que se inicialicen las notificaciones
     } else {
       // Si solo tenemos el número de orden, mostrar confirmación básica
       setLoading(false);
     }
-  }, [orderId]);
+  }, [orderId, orderNumber]);
 
   const loadOrderDetails = async () => {
     try {
@@ -50,6 +81,14 @@ const OrderConfirmationScreen = () => {
     });
   };
 
+  const handleViewOrder = () => {
+    // Navegar a la pantalla de tracking del pedido actual
+    navigation.navigate('OrderTracking', { 
+      orderId: orderId,
+      orderNumber: orderNumber 
+    });
+  };
+
   const handleViewOrders = () => {
     navigation.reset({
       index: 0,
@@ -58,6 +97,11 @@ const OrderConfirmationScreen = () => {
         { name: 'HistorialPedidos' }
       ]
     });
+  };
+
+  const handleTestNotification = () => {
+    NotificationService.sendTestNotification();
+    Alert.alert('Prueba enviada', 'Revisa tus notificaciones para ver la prueba');
   };
 
   const getStatusColor = (status) => {
@@ -124,17 +168,16 @@ const OrderConfirmationScreen = () => {
           {/* Información del comerciante */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Comerciante</Text>
-            <Text style={styles.merchantName}>{order.merchantName}</Text>
-            {order.merchantId?.address && (
+            <Text style={styles.merchantName}>
+              {order.merchantId?.business?.businessName || order.merchantId?.name || 'Comerciante'}
+            </Text>
+            {order.merchantId?.business?.address && (
               <Text style={styles.merchantAddress}>
-                {typeof order.merchantId.address === 'string' 
-                  ? order.merchantId.address 
-                  : order.merchantId.address?.street || 'Dirección no disponible'
-                }
+                📍 {order.merchantId.business.address}
               </Text>
             )}
-            {order.merchantId?.phone && (
-              <Text style={styles.merchantPhone}>📞 {order.merchantId.phone}</Text>
+            {order.merchantId?.business?.phone && (
+              <Text style={styles.merchantPhone}>📞 {order.merchantId.business.phone}</Text>
             )}
           </View>
 
@@ -144,8 +187,8 @@ const OrderConfirmationScreen = () => {
             {order.items.map((item, index) => (
               <View key={index} style={styles.orderItem}>
                 <Text style={styles.itemQuantity}>{item.quantity}x</Text>
-                <Text style={styles.itemName}>{item.serviceName}</Text>
-                <Text style={styles.itemPrice}>${(item.totalPrice || 0).toFixed(2)}</Text>
+                <Text style={styles.itemName}>{item.name}</Text>
+                <Text style={styles.itemPrice}>${(item.subtotal || (item.price * item.quantity) || 0).toFixed(2)}</Text>
               </View>
             ))}
             
@@ -172,7 +215,9 @@ const OrderConfirmationScreen = () => {
               </Text>
             )}
             <Text style={styles.paymentMethod}>
-              💳 {order.paymentMethod === 'cash' ? 'Efectivo' : order.paymentMethod === 'card' ? 'Tarjeta de crédito (Prueba)' : order.paymentMethod || 'Efectivo'}
+              💳 {order.paymentInfo?.method === 'cash' ? 'Efectivo' : 
+                   order.paymentInfo?.method === 'card' ? 'Tarjeta de crédito (Prueba)' : 
+                   order.paymentInfo?.method || 'Efectivo'}
             </Text>
           </View>
 
@@ -214,10 +259,18 @@ const OrderConfirmationScreen = () => {
       {/* Botones de acción */}
       <View style={styles.actionsContainer}>
         <TouchableOpacity
+          style={styles.trackOrderButton}
+          onPress={handleViewOrder}
+        >
+          <Icon name="location-outline" size={20} color="#fff" style={styles.buttonIcon} />
+          <Text style={styles.trackOrderButtonText}>Ver mi pedido</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={styles.secondaryButton}
           onPress={handleViewOrders}
         >
-          <Text style={styles.secondaryButtonText}>Ver mis pedidos</Text>
+          <Text style={styles.secondaryButtonText}>Ver todos mis pedidos</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -225,6 +278,14 @@ const OrderConfirmationScreen = () => {
           onPress={handleContinueShopping}
         >
           <Text style={styles.primaryButtonText}>Continuar comprando</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.testButton}
+          onPress={handleTestNotification}
+        >
+          <Icon name="notifications-outline" size={20} color="#666" style={styles.buttonIcon} />
+          <Text style={styles.testButtonText}>Probar notificaciones</Text>
         </TouchableOpacity>
       </View>
 
@@ -413,6 +474,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     gap: 15,
   },
+  trackOrderButton: {
+    backgroundColor: '#FF6B6B',
+    paddingVertical: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  trackOrderButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  buttonIcon: {
+    marginRight: 8,
+  },
   primaryButton: {
     backgroundColor: '#4CAF50',
     paddingVertical: 15,
@@ -436,6 +513,21 @@ const styles = StyleSheet.create({
     color: '#4CAF50',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  testButton: {
+    backgroundColor: '#f8f8f8',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  testButtonText: {
+    color: '#666',
+    fontSize: 14,
+    fontWeight: '500',
   },
   bottomPadding: {
     height: 30,

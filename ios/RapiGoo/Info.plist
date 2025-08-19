@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>$(DEVELOPMENT_LANGUAGE)</string>
+    <key>CFBundleDisplayName</key>
+    <string>RapiGoo</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.rapigoo.delivery</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundlePackageType</key>
+    <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+    
+    <!-- FIX: Permisos de ubicación optimizados para iOS -->
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>RapiGoo necesita tu ubicación para mostrarte los comercios cercanos y calcular tiempos de entrega mientras usas la app.</string>
+    
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>RapiGoo necesita acceder a tu ubicación para rastrear el delivery en tiempo real, incluso cuando la app está en segundo plano. Esto nos permite informarte el estado de tu pedido y optimizar las rutas de entrega.</string>
+    
+    <key>NSLocationAlwaysUsageDescription</key>
+    <string>RapiGoo utiliza tu ubicación para el seguimiento continuo del delivery, garantizando entregas rápidas y precisas. Solo se usa durante entregas activas.</string>
+    
+    <!-- FIX: Modo de ubicación precisa vs aproximada -->
+    <key>NSLocationDefaultAccuracyReduced</key>
+    <false/>
+    
+    <!-- FIX: Indicador de uso de ubicación en background -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>location</string>
+        <string>fetch</string>
+        <string>remote-notification</string>
+    </array>
+    
+    <!-- FIX: Capacidades requeridas -->
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+        <string>armv7</string>
+        <string>location-services</string>
+        <string>gps</string>
+    </array>
+    
+    <key>UILaunchStoryboardName</key>
+    <string>LaunchScreen</string>
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+        <string>armv7</string>
+    </array>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+    </array>
+    <key>UIViewControllerBasedStatusBarAppearance</key>
+    <false/>
+</dict>
+</plist>

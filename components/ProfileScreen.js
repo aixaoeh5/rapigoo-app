@@ -55,7 +55,9 @@ useFocusEffect(
   const handleLogout = async () => {
     try {
       await AsyncStorage.removeItem('token');
-      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+      await AsyncStorage.removeItem('userData');
+      await AsyncStorage.removeItem('user');
+      navigation.reset({ index: 0, routes: [{ name: 'UserType' }] });
     } catch (error) {
       console.error('❌ Error al cerrar sesión:', error);
     }
@@ -181,6 +183,14 @@ useFocusEffect(
       </View>
 
       <View style={styles.sectionList}>
+        <TouchableOpacity 
+          style={styles.listItem}
+          onPress={() => navigation.navigate('ClientLocationSetup', { isEditing: true })}
+        >
+          <Text style={styles.listText}>Mi ubicación de entrega</Text>
+          <Icon name="chevron-forward" size={16} color={theme.colors.textSecondary} />
+        </TouchableOpacity>
+
         <TouchableOpacity 
           style={styles.listItem}
           onPress={() => navigation.navigate('PaymentMethods')}

@@ -114,9 +114,16 @@ app.use((req, res, next) => {
   next();
 });
 
-// CORS configuración segura
+// CORS configuración para desarrollo
 const corsOptions = {
   origin: function (origin, callback) {
+    // En desarrollo, permitir cualquier origen
+    if (process.env.NODE_ENV === 'development') {
+      callback(null, true);
+      return;
+    }
+    
+    // En producción, ser más restrictivo
     const allowedOrigins = [
       process.env.FRONTEND_URL || 'http://localhost:3000',
       process.env.ADMIN_URL || 'http://localhost:3001',
@@ -137,19 +144,56 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// Conexión a MongoDB con opciones de seguridad
-const connectDB = async () => {
+// Conexión a MongoDB con retry automático y mejor manejo de errores
+const connectDB = async (retryCount = 0) => {
+  const maxRetries = 3;
+  
   try {
     await mongoose.connect(process.env.MONGO_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 15000,
+      socketTimeoutMS: 60000,
+      connectTimeoutMS: 15000,
+      maxPoolSize: 15,
+      minPoolSize: 2,
+      maxIdleTimeMS: 45000,
+      waitQueueTimeoutMS: 15000,
+      heartbeatFrequencyMS: 10000,
+      retryWrites: true,
+      retryReads: true
     });
+    
     console.log('✅ Conectado a MongoDB');
+    
+    // Manejo de eventos de conexión
+    mongoose.connection.on('error', (err) => {
+      console.error('❌ Error de conexión MongoDB:', err.message);
+    });
+    
+    mongoose.connection.on('disconnected', () => {
+      console.log('⚠️  Desconectado de MongoDB - Intentando reconectar...');
+    });
+    
+    mongoose.connection.on('reconnected', () => {
+      console.log('✅ Reconectado a MongoDB');
+    });
+    
   } catch (err) {
-    console.error('❌ Error al conectar a MongoDB:', err.message);
-    console.log('⚠️  El servidor continuará sin conexión a base de datos');
-    console.log('ℹ️  Algunas funcionalidades estarán limitadas');
+    console.error(`❌ Error al conectar a MongoDB (intento ${retryCount + 1}/${maxRetries}):`, err.message);
+    
+    if (retryCount < maxRetries - 1) {
+      const delay = Math.pow(2, retryCount) * 2000; // Backoff exponencial
+      console.log(`🔄 Reintentando conexión en ${delay/1000} segundos...`);
+      
+      setTimeout(() => {
+        connectDB(retryCount + 1);
+      }, delay);
+    } else {
+      console.log('⚠️  Máximo número de reintentos alcanzado');
+      console.log('⚠️  El servidor continuará sin conexión a base de datos');
+      console.log('ℹ️  Algunas funcionalidades estarán limitadas');
+    }
   }
 };
 
@@ -214,6 +258,14 @@ app.use('/api/chat', chatRoutes);
 const reviewRoutes = require('./routes/reviewRoutes');
 app.use('/api/reviews', reviewRoutes);
 
+// Rutas para IA y extracción de direcciones (temporalmente deshabilitado)
+// const aiRoutes = require('./routes/aiRoutes');
+// app.use('/api/ai', aiRoutes);
+
+// Rutas para categorías del sistema
+const systemCategoryRoutes = require('./routes/systemCategoryRoutes');
+app.use('/api/system-categories', systemCategoryRoutes);
+
 // Rutas de prueba (solo en desarrollo)
 if (process.env.NODE_ENV === 'development') {
   const testRoutes = require('./routes/testRoutes');
@@ -227,6 +279,31 @@ app.get('/', (req, res) => {
     message: 'API Rapigoo',
     version: '1.0.0',
     status: 'active'
+  });
+});
+
+// Ruta base para API - Missing endpoint that was causing 404s
+app.get('/api', (req, res) => {
+  res.json({
+    message: 'Rapigoo API',
+    version: '1.0.0',
+    status: 'online',
+    timestamp: new Date().toISOString(),
+    endpoints: [
+      '/api/auth',
+      '/api/merchant', 
+      '/api/services',
+      '/api/categories',
+      '/api/cart',
+      '/api/orders',
+      '/api/search',
+      '/api/favorites',
+      '/api/notifications',
+      '/api/payments',
+      '/api/delivery',
+      '/api/chat',
+      '/api/reviews'
+    ]
   });
 });
 
@@ -293,9 +370,23 @@ process.on('SIGINT', async () => {
 
 // Iniciar servidor
 const PORT = process.env.PORT || 5000;
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Servidor corriendo en el puerto ${PORT}`);
+const HOST = '0.0.0.0'; // Escuchar en todas las interfaces
+const server = app.listen(PORT, HOST, () => {
+  console.log(`🚀 Servidor corriendo en http://${HOST}:${PORT}`);
+  console.log(`📱 Accesible desde dispositivos en la red local`);
   console.log(`🔒 Modo: ${process.env.NODE_ENV || 'development'}`);
+  
+  // Mostrar IPs disponibles
+  const os = require('os');
+  const networkInterfaces = os.networkInterfaces();
+  console.log('📡 IPs disponibles:');
+  Object.keys(networkInterfaces).forEach(interfaceName => {
+    networkInterfaces[interfaceName].forEach(networkInterface => {
+      if (networkInterface.family === 'IPv4' && !networkInterface.internal) {
+        console.log(`   - http://${networkInterface.address}:${PORT}/api`);
+      }
+    });
+  });
 });
 
 // Inicializar WebSocket server

@@ -1,0 +1,149 @@
+{
+  "timestamp": "2025-08-17T23:36:10.623Z",
+  "frameworkValidation": {
+    "totalSuites": 7,
+    "validatedSuites": 7,
+    "criticalSuites": 4
+  },
+  "manualTestCommands": [
+    {
+      "name": "Customer Journey Tests",
+      "priority": "critical",
+      "command": "npx jest __tests__/e2e/customerJourney.test.js --verbose"
+    },
+    {
+      "name": "Merchant Workflow Tests",
+      "priority": "critical",
+      "command": "npx jest __tests__/e2e/merchantWorkflow.test.js --verbose"
+    },
+    {
+      "name": "Delivery Person Flow Tests",
+      "priority": "critical",
+      "command": "npx jest __tests__/e2e/deliveryPersonFlow.test.js --verbose"
+    },
+    {
+      "name": "Cross-User Integration Tests",
+      "priority": "high",
+      "command": "npx jest __tests__/e2e/crossUserIntegration.test.js --verbose"
+    },
+    {
+      "name": "Data Integrity Tests",
+      "priority": "critical",
+      "command": "npx jest __tests__/e2e/dataIntegrityTests.test.js --verbose"
+    },
+    {
+      "name": "API Integration Tests",
+      "priority": "high",
+      "command": "npx jest __tests__/e2e/apiIntegrationTests.test.js --verbose"
+    },
+    {
+      "name": "Stress and Edge Cases",
+      "priority": "medium",
+      "command": "npx jest __tests__/e2e/stressAndEdgeCases.test.js --verbose"
+    }
+  ],
+  "quickStartCommands": [
+    "npm install",
+    "npx jest __tests__/e2e/ --verbose"
+  ],
+  "validationResults": [
+    {
+      "name": "Customer Journey Tests",
+      "file": "customerJourney.test.js",
+      "priority": "critical",
+      "duration": 2,
+      "success": true,
+      "stats": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0
+      },
+      "output": "Test file validation passed",
+      "errors": []
+    },
+    {
+      "name": "Merchant Workflow Tests",
+      "file": "merchantWorkflow.test.js",
+      "priority": "critical",
+      "duration": 2,
+      "success": true,
+      "stats": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0
+      },
+      "output": "Test file validation passed",
+      "errors": []
+    },
+    {
+      "name": "Delivery Person Flow Tests",
+      "file": "deliveryPersonFlow.test.js",
+      "priority": "critical",
+      "duration": 2,
+      "success": true,
+      "stats": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0
+      },
+      "output": "Test file validation passed",
+      "errors": []
+    },
+    {
+      "name": "Cross-User Integration Tests",
+      "file": "crossUserIntegration.test.js",
+      "priority": "high",
+      "duration": 1,
+      "success": true,
+      "stats": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0
+      },
+      "output": "Test file validation passed",
+      "errors": []
+    },
+    {
+      "name": "Data Integrity Tests",
+      "file": "dataIntegrityTests.test.js",
+      "priority": "critical",
+      "duration": 1,
+      "success": true,
+      "stats": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0
+      },
+      "output": "Test file validation passed",
+      "errors": []
+    },
+    {
+      "name": "API Integration Tests",
+      "file": "apiIntegrationTests.test.js",
+      "priority": "high",
+      "duration": 1,
+      "success": true,
+      "stats": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0
+      },
+      "output": "Test file validation passed",
+      "errors": []
+    },
+    {
+      "name": "Stress and Edge Cases",
+      "file": "stressAndEdgeCases.test.js",
+      "priority": "medium",
+      "duration": 1,
+      "success": true,
+      "stats": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0
+      },
+      "output": "Test file validation passed",
+      "errors": []
+    }
+  ]
+}

@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert, Modal, FlatList, ActivityIndicator } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';  
 import * as Location from 'expo-location';  
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { apiClient } from '../api/apiClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CoordinateValidator } from '../utils/coordinateValidator';
 
 const DeliveryMapScreen = () => {
     const navigation = useNavigation();
@@ -17,10 +18,18 @@ const DeliveryMapScreen = () => {
     const [loading, setLoading] = useState(false);
     const [userData, setUserData] = useState(null);
     const [showMenuModal, setShowMenuModal] = useState(false);
+    const [mapError, setMapError] = useState(null);
+    const [locationError, setLocationError] = useState(null);
 
-    const dotAnimation1 = new Animated.Value(0);
-    const dotAnimation2 = new Animated.Value(0);
-    const dotAnimation3 = new Animated.Value(0);
+    // FIX: Usar useRef para Animated Values para evitar memory leaks
+    const dotAnimation1 = useRef(new Animated.Value(0)).current;
+    const dotAnimation2 = useRef(new Animated.Value(0)).current;
+    const dotAnimation3 = useRef(new Animated.Value(0)).current;
+    
+    // FIX: useRef para timeouts y cleanup
+    const navigationTimeoutRef = useRef(null);
+    const animationRefs = useRef([]);
+    const isMountedRef = useRef(true);
 
     const loadUserData = async () => {
         try {
@@ -56,6 +65,8 @@ const DeliveryMapScreen = () => {
                         console.log('🎯 Navegando automáticamente a entrega activa:', activeDelivery.status);
                         setTimeout(() => {
                             navigation.navigate('DeliveryNavigation', { 
+                                trackingId: activeDelivery._id,
+                                orderId: activeDelivery.orderId?._id || activeDelivery.orderId,
                                 deliveryTracking: activeDelivery 
                             });
                         }, 1000); // Pequeño delay para mostrar la información primero
@@ -96,17 +107,86 @@ const DeliveryMapScreen = () => {
         }
     };
 
+    // FIX: Mejorar getLocationPermission con validación robusta
     const getLocationPermission = async () => {
         try {
+            console.log('📍 Solicitando permisos de ubicación...');
+            setLocationError(null);
+            
             let { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== 'granted') {
-                Alert.alert('Permisos requeridos', 'Necesitamos acceso a tu ubicación para mostrar pedidos cercanos');
-                return;
+                setLocationError('Permisos de ubicación denegados');
+                Alert.alert(
+                    'Permisos requeridos', 
+                    'Necesitamos acceso a tu ubicación para mostrar pedidos cercanos',
+                    [
+                        { text: 'Cancelar', style: 'cancel' },
+                        { text: 'Configuración', onPress: () => Location.requestForegroundPermissionsAsync() }
+                    ]
+                );
+                return false;
             }
-            let userLocation = await Location.getCurrentPositionAsync({});
-            setLocation(userLocation.coords);
+            
+            // FIX: Verificar que el servicio de ubicación esté habilitado
+            const locationProviderStatus = await Location.getProviderStatusAsync();
+            if (!locationProviderStatus.locationServicesEnabled) {
+                setLocationError('GPS deshabilitado');
+                Alert.alert(
+                    'GPS Deshabilitado',
+                    'Por favor habilita el servicio de ubicación en tu dispositivo',
+                    [{ text: 'OK' }]
+                );
+                return false;
+            }
+            
+            console.log('📍 Obteniendo ubicación actual...');
+            let userLocation = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.Balanced,
+                timeout: 15000,
+                maximumAge: 60000
+            });
+            
+            // FIX: Validar coordenadas antes de setear estado
+            if (userLocation?.coords?.latitude && userLocation?.coords?.longitude) {
+                const coords = {
+                    latitude: userLocation.coords.latitude,
+                    longitude: userLocation.coords.longitude,
+                    accuracy: userLocation.coords.accuracy
+                };
+                
+                // Usar CoordinateValidator para validación robusta
+                const validatedCoords = CoordinateValidator.getSafeCoords(coords);
+                
+                if (validatedCoords && isMountedRef.current) {
+                    setLocation(validatedCoords);
+                    setLocationError(null);
+                    console.log('✅ Ubicación validada:', validatedCoords.latitude, validatedCoords.longitude);
+                    return true;
+                } else {
+                    throw new Error('Coordenadas inválidas después de validación');
+                }
+            } else {
+                throw new Error('Coordenadas inválidas recibidas del GPS');
+            }
+            
         } catch (error) {
             console.error('❌ Error obteniendo ubicación:', error);
+            setLocationError(error.message);
+            
+            Alert.alert(
+                'Error de Ubicación',
+                `No se pudo obtener la ubicación: ${error.message}`,
+                [
+                    { text: 'Reintentar', onPress: () => getLocationPermission() },
+                    { text: 'Usar ubicación por defecto', onPress: () => {
+                        const defaultCoords = CoordinateValidator.getDefaultDRCoords();
+                        setLocation(defaultCoords);
+                        setLocationError('Usando ubicación por defecto (Santo Domingo)');
+                    }},
+                    { text: 'Cancelar', style: 'cancel' }
+                ]
+            );
+            return false;
         }
     };
 
@@ -162,7 +242,7 @@ const DeliveryMapScreen = () => {
                         onPress: async () => {
                             try {
                                 // Limpiar datos del AsyncStorage
-                                await AsyncStorage.multiRemove(['userToken', 'userData', 'token']);
+                                await AsyncStorage.multiRemove(['token', 'userData']);
                                 
                                 console.log('🚪 Sesión cerrada, navegando a Welcome');
                                 
@@ -184,64 +264,99 @@ const DeliveryMapScreen = () => {
         }
     };
 
+    // FIX: Mejorar cleanup con useEffect properly structured
     useEffect(() => {
+        isMountedRef.current = true;
+        
         loadUserData();
         getLocationPermission();
+        
+        // FIX: Función de animación mejorada con cleanup
         const animateDots = () => {
-            Animated.loop(
-                Animated.sequence([
-                    Animated.timing(dotAnimation1, {
-                        toValue: 1,
-                        duration: 500,
-                        useNativeDriver: true,
-                    }),
-                    Animated.timing(dotAnimation1, {
-                        toValue: 0,
-                        duration: 500,
-                        useNativeDriver: true,
-                    }),
-                ])
-            ).start();
+            const createDotAnimation = (animatedValue, delay = 0) => {
+                return Animated.loop(
+                    Animated.sequence([
+                        Animated.timing(animatedValue, {
+                            toValue: 1,
+                            duration: 500,
+                            delay,
+                            useNativeDriver: true,
+                        }),
+                        Animated.timing(animatedValue, {
+                            toValue: 0,
+                            duration: 500,
+                            useNativeDriver: true,
+                        }),
+                    ])
+                );
+            };
 
-            Animated.loop(
-                Animated.sequence([
-                    Animated.timing(dotAnimation2, {
-                        toValue: 1,
-                        duration: 500,
-                        delay: 200, 
-                        useNativeDriver: true,
-                    }),
-                    Animated.timing(dotAnimation2, {
-                        toValue: 0,
-                        duration: 500,
-                        useNativeDriver: true,
-                    }),
-                ])
-            ).start();
-
-            Animated.loop(
-                Animated.sequence([
-                    Animated.timing(dotAnimation3, {
-                        toValue: 1,
-                        duration: 500,
-                        delay: 400, 
-                        useNativeDriver: true,
-                    }),
-                    Animated.timing(dotAnimation3, {
-                        toValue: 0,
-                        duration: 500,
-                        useNativeDriver: true,
-                    }),
-                ])
-            ).start();
+            const animation1 = createDotAnimation(dotAnimation1, 0);
+            const animation2 = createDotAnimation(dotAnimation2, 200);
+            const animation3 = createDotAnimation(dotAnimation3, 400);
+            
+            // Guardar referencias para cleanup
+            animationRefs.current = [animation1, animation2, animation3];
+            
+            animation1.start();
+            animation2.start();
+            animation3.start();
         };
 
         animateDots();
+        
+        // FIX: Cleanup function mejorada
+        return () => {
+            isMountedRef.current = false;
+            
+            // Limpiar timeout de navegación
+            if (navigationTimeoutRef.current) {
+                clearTimeout(navigationTimeoutRef.current);
+            }
+            
+            // Detener todas las animaciones
+            animationRefs.current.forEach(animation => {
+                if (animation) {
+                    animation.stop();
+                }
+            });
+            
+            // Reset animated values
+            dotAnimation1.setValue(0);
+            dotAnimation2.setValue(0);
+            dotAnimation3.setValue(0);
+        };
     }, []);
+
+    // FIX: Usar useFocusEffect para recargar datos cuando la pantalla gana foco
+    useFocusEffect(
+        useCallback(() => {
+            if (userData) {
+                loadActiveDeliveries();
+                loadAvailableOrders();
+            }
+        }, [userData])
+    );
 
     return (
         <View style={styles.container}>
-            {location ? (
+            {mapError ? (
+                // FIX: Mostrar error del mapa con opción de reintentar
+                <View style={styles.errorContainer}>
+                    <Ionicons name="map-outline" size={64} color="#ccc" />
+                    <Text style={styles.errorTitle}>Error en el Mapa</Text>
+                    <Text style={styles.errorMessage}>{mapError}</Text>
+                    <TouchableOpacity 
+                        style={styles.retryButton}
+                        onPress={() => {
+                            setMapError(null);
+                            getLocationPermission();
+                        }}
+                    >
+                        <Text style={styles.retryButtonText}>Reintentar</Text>
+                    </TouchableOpacity>
+                </View>
+            ) : location ? (
                 <MapView
                     style={styles.map}
                     initialRegion={{
@@ -250,12 +365,40 @@ const DeliveryMapScreen = () => {
                         latitudeDelta: 0.01,
                         longitudeDelta: 0.01,
                     }}
-                    showsUserLocation
+                    showsUserLocation={false} // FIX: Deshabilitar para mejor performance
+                    showsMyLocationButton={false} // FIX: Deshabilitar para mejor performance
+                    showsCompass={false}          // FIX: Deshabilitar para mejor performance
+                    showsTraffic={false}          // FIX: Deshabilitar para mejor performance
+                    toolbarEnabled={false}       // FIX: Android only - mejor performance
+                    onError={(error) => {
+                        console.error('❌ Error en MapView:', error);
+                        setMapError('Error cargando el mapa. Verifica tu conexión a internet.');
+                    }}
                 >
-                    <Marker coordinate={{ latitude: location.latitude, longitude: location.longitude }} />
+                    <Marker 
+                        coordinate={{ 
+                            latitude: location.latitude, 
+                            longitude: location.longitude 
+                        }}
+                        title="Mi ubicación"
+                        description={locationError || "Ubicación actual"}
+                    />
                 </MapView>
             ) : (
-                <Text style={styles.loadingText}>Cargando ubicación...</Text>
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#E60023" />
+                    <Text style={styles.loadingText}>
+                        {locationError || 'Obteniendo ubicación...'}
+                    </Text>
+                    {locationError && (
+                        <TouchableOpacity 
+                            style={styles.retryButton}
+                            onPress={getLocationPermission}
+                        >
+                            <Text style={styles.retryButtonText}>Reintentar</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
             )}
 
             <TouchableOpacity 
@@ -281,6 +424,8 @@ const DeliveryMapScreen = () => {
                             onPress={() => {
                                 if (activeDeliveries.length > 0) {
                                     navigation.navigate('DeliveryNavigation', { 
+                                        trackingId: activeDeliveries[0]._id,
+                                        orderId: activeDeliveries[0].orderId?._id || activeDeliveries[0].orderId,
                                         deliveryTracking: activeDeliveries[0] 
                                     });
                                 }
@@ -700,6 +845,46 @@ const styles = StyleSheet.create({
     logoutText: {
         color: '#FF4444',
         fontWeight: '500',
+    },
+    // FIX: Nuevos estilos para manejo de errores
+    errorContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#f8f9fa',
+        padding: 20,
+    },
+    errorTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#333',
+        marginTop: 16,
+        marginBottom: 8,
+    },
+    errorMessage: {
+        fontSize: 14,
+        color: '#666',
+        textAlign: 'center',
+        lineHeight: 20,
+        marginBottom: 20,
+    },
+    retryButton: {
+        backgroundColor: '#2196F3',
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 8,
+        marginTop: 10,
+    },
+    retryButtonText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: 'bold',
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#f8f9fa',
     },
 });
 

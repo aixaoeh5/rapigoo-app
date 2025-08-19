@@ -1,28 +1,65 @@
 {
   "expo": {
-    "name": "my-app",
-    "slug": "my-app",
+    "name": "RapiGoo",
+    "slug": "rapigoo-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "scheme": "myapp",
+    "scheme": "rapigoo",
     "splash": {
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#FF6B6B"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.rapigoo.delivery",
+      "config": {
+        "googleMapsApiKey": "AIzaSyDqE-L2_sObvQVl5gWlJaRVF2rIzH5Ztkg"
+      }
     },
     "android": {
-      "package": "com.aixaoeh.myapp"
+      "package": "com.rapigoo.delivery",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#FF6B6B"
+      },
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDqE-L2_sObvQVl5gWlJaRVF2rIzH5Ztkg"
+        }
+      }
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
     },
+    "assetBundlePatterns": [
+      "assets/images/*",
+      "assets/icons/*"
+    ],
     "extra": {
       "eas": {
         "projectId": "88259871-158d-4779-8488-f0b9882473ee"
       }
-    }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you share them with merchants."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "RapiGoo necesita acceder a tu ubicación para rastrear el delivery en tiempo real, incluso cuando la app está en segundo plano. Esto nos permite informarte el estado de tu pedido y optimizar las rutas de entrega.",
+          "locationAlwaysPermission": "RapiGoo utiliza tu ubicación para el seguimiento continuo del delivery, garantizando entregas rápidas y precisas. Solo se usa durante entregas activas.",
+          "locationWhenInUsePermission": "RapiGoo necesita tu ubicación para mostrarte los comercios cercanos y calcular tiempos de entrega mientras usas la app.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true,
+          "isIosBackgroundLocationEnabled": true
+        }
+      ]
+    ]
   }
 }
