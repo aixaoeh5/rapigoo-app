@@ -280,13 +280,6 @@ const OrderConfirmationScreen = () => {
           <Text style={styles.primaryButtonText}>Continuar comprando</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.testButton}
-          onPress={handleTestNotification}
-        >
-          <Icon name="notifications-outline" size={20} color="#666" style={styles.buttonIcon} />
-          <Text style={styles.testButtonText}>Probar notificaciones</Text>
-        </TouchableOpacity>
       </View>
 
       <View style={styles.bottomPadding} />
@@ -513,21 +506,6 @@ const styles = StyleSheet.create({
     color: '#4CAF50',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  testButton: {
-    backgroundColor: '#f8f8f8',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  testButtonText: {
-    color: '#666',
-    fontSize: 14,
-    fontWeight: '500',
   },
   bottomPadding: {
     height: 30,

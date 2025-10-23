@@ -124,8 +124,10 @@ export const handleApiError = (error, options = {}) => {
   }
   console.groupEnd();
 
-  // Mostrar alerta al usuario si se solicita
-  if (showAlert) {
+  // Mostrar alerta al usuario si se solicita Y no está desactivado por env var
+  const shouldShowAlert = showAlert && process.env.EXPO_PUBLIC_DISABLE_ERROR_ALERTS !== 'true';
+  
+  if (shouldShowAlert) {
     const messageToShow = customMessage || errorInfo.message;
     
     if (errorInfo.canRetry && onRetry) {
@@ -140,6 +142,9 @@ export const handleApiError = (error, options = {}) => {
     } else {
       Alert.alert('Error', messageToShow);
     }
+  } else if (showAlert) {
+    // Si las alertas están desactivadas, mostrar mensaje más visible en consola
+    console.warn('🚨 ERROR NOTIFICATION (Alert disabled):', customMessage || errorInfo.message);
   }
 
   return errorInfo;

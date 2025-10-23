@@ -789,54 +789,6 @@ const HomeDeliveryScreen = () => {
           </View>
         )}
 
-        {/* Botón de prueba API directo */}
-        <TouchableOpacity
-          style={[styles.emergencyButton, { backgroundColor: '#9C27B0', marginBottom: 15 }]}
-          onPress={async () => {
-            console.log('🧪 Probando API directamente...');
-            try {
-              const response = await apiClient.get('/delivery/test-history');
-              console.log('✅ API Test exitoso:', response.data);
-              Alert.alert('✅ API OK', 'La conexión al API funciona correctamente');
-            } catch (error) {
-              console.error('❌ Error API Test:', error);
-              Alert.alert('❌ Error API', `Status: ${error.response?.status}\nMessage: ${error.message}`);
-            }
-          }}
-        >
-          <Icon name="bug" size={20} color="#FFF" />
-          <Text style={[styles.buttonText, { marginLeft: 8 }]}>Test API</Text>
-        </TouchableOpacity>
-
-        {/* Botón de acceso directo a historial */}
-        <TouchableOpacity
-          style={[styles.emergencyButton, { backgroundColor: '#2196F3', marginBottom: 15 }]}
-          onPress={() => {
-            console.log('🔍 Navegando a DeliveryHistory desde botón...');
-            try {
-              navigation.navigate('DeliveryHistory');
-              console.log('✅ Navegación exitosa');
-            } catch (error) {
-              console.error('❌ Error:', error);
-            }
-          }}
-        >
-          <Icon name="list" size={20} color="#FFF" />
-          <Text style={[styles.buttonText, { marginLeft: 8 }]}>Ver Mis Entregas</Text>
-        </TouchableOpacity>
-
-        {/* Botón de emergencia para buscar entregas activas */}
-        <TouchableOpacity
-          style={[styles.emergencyButton, { backgroundColor: '#FF9800', marginBottom: 15 }]}
-          onPress={async () => {
-            console.log('🔄 Buscando entregas activas manualmente...');
-            await loadActiveDeliveries();
-            await checkAndNavigateToActiveDelivery();
-          }}
-        >
-          <Icon name="refresh" size={20} color="#FFF" />
-          <Text style={[styles.buttonText, { marginLeft: 8 }]}>Buscar Entregas Activas</Text>
-        </TouchableOpacity>
 
         {/* Delivery Activo o Pedidos Disponibles */}
         {activeDeliveries.length > 0 ? (
@@ -1401,19 +1353,6 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 12,
     opacity: 0.8,
-  },
-  emergencyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 20,
-    paddingVertical: 15,
-    borderRadius: 8,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
   },
   buttonText: {
     color: '#FFF',

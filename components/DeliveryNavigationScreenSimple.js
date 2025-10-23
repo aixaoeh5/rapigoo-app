@@ -214,18 +214,6 @@ const DeliveryNavigationScreenSimple = ({ route }) => {
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity
-          style={[styles.actionButton, styles.emergencyButton]}
-          onPress={() => {
-            Alert.alert(
-              'Emergencia',
-              'Contactar con soporte en caso de problemas',
-              [{ text: 'OK' }]
-            );
-          }}
-        >
-          <Text style={styles.actionButtonText}>Emergencia</Text>
-        </TouchableOpacity>
       </View>
     </View>
   );
@@ -314,9 +302,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     marginTop: 15,
-  },
-  emergencyButton: {
-    backgroundColor: '#ff9800',
   },
   actionButtonText: {
     color: '#fff',

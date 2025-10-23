@@ -244,14 +244,6 @@ const LoginScreen = () => {
         )}
       </TouchableOpacity>
 
-      {/* Debug button - TEMPORARY */}
-      <TouchableOpacity 
-        style={[styles.button, { backgroundColor: '#ff6b6b', marginTop: 10 }]} 
-        onPress={() => navigation.navigate('NetworkDebug')}
-      >
-        <Text style={styles.buttonText}>🔍 Network Debug Tool</Text>
-      </TouchableOpacity>
-
       <Text style={styles.grayText}>¿No tienes una cuenta?</Text>
 
       <TouchableOpacity

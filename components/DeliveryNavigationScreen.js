@@ -1519,14 +1519,6 @@ const DeliveryNavigationScreen = ({ route }) => {
             </TouchableOpacity>
           )}
 
-          {/* Emergencia */}
-          <TouchableOpacity
-            style={[styles.secondaryButton, styles.emergencyButton]}
-            onPress={() => Alert.alert('Emergencia', 'Contactando soporte...')}
-          >
-            <Ionicons name="alert-circle-outline" size={18} color="#f44336" />
-            <Text style={[styles.secondaryButtonText, { color: '#f44336' }]}>SOS</Text>
-          </TouchableOpacity>
         </View>
 
         {/* Estado de tracking */}
@@ -1780,10 +1772,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#e9ecef',
-  },
-  emergencyButton: {
-    borderColor: '#ffebee',
-    backgroundColor: '#ffebee',
   },
   secondaryButtonText: {
     fontSize: 14,

@@ -315,21 +315,6 @@ const TestMapScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          style={[styles.controlButton, { backgroundColor: '#2196F3', width: '100%' }]}
-          onPress={() => {
-            Alert.alert(
-              'Información de Debug',
-              `React Native Maps: ${hasNativeMaps ? 'Disponible' : 'No disponible'}\n` +
-              `API Key: ${isMapConfigured() ? 'Configurada' : 'Faltante'}\n` +
-              `Modo actual: ${mapType}\n` +
-              `Marcadores: ${mapState.markers.length}`
-            );
-          }}
-        >
-          <Ionicons name="information-circle" size={20} color="#FFF" />
-          <Text style={styles.controlButtonText}>Mostrar Info</Text>
-        </TouchableOpacity>
 
         <View style={styles.infoPanel}>
           <Text style={styles.infoTitle}>Estado del Mapa:</Text>
