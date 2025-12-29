@@ -5,7 +5,6 @@ import {
   TextInput,
   StyleSheet,
   TouchableOpacity,
-  Image,
   Alert,
   ScrollView,
 } from 'react-native';
@@ -14,6 +13,7 @@ import * as ImagePicker from 'expo-image-picker';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { getStatusBarHeight } from 'react-native-status-bar-height';
 import { createOrUpdateService } from '../api/serviceApi';
+import LazyImage from './shared/LazyImage';
 
 const AddServiceScreen = () => {
   const navigation = useNavigation();
@@ -102,7 +102,13 @@ const AddServiceScreen = () => {
 
       <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
         {image ? (
-          <Image source={{ uri: image }} style={styles.image} />
+          <LazyImage 
+            source={{ uri: image }} 
+            style={styles.image}
+            resizeMode="cover"
+            showLoader={true}
+            fadeDuration={200}
+          />
         ) : (
           <Text style={styles.imagePlaceholder}>Seleccionar imagen</Text>
         )}

@@ -47,7 +47,14 @@ const EditMerchantProfileScreen = ({ navigation }) => {
           setOriginalEmail(data.email);
           setPhone(data.phone || '');
           setAvatar(data.avatar || '');
-          setAddress(data.business?.address || '');
+          const businessAddress = data.business?.address;
+          if (typeof businessAddress === 'string') {
+            setAddress(businessAddress);
+          } else if (businessAddress?.street) {
+            setAddress(`${businessAddress.street}, ${businessAddress.city}, ${businessAddress.state}`);
+          } else {
+            setAddress('');
+          }
           setOpeningHours(data.business?.schedule?.opening || '');
           setClosingHours(data.business?.schedule?.closing || '');
           setSocials(data.business?.socials || '');

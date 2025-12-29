@@ -12,7 +12,7 @@ import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { getStatusBarHeight } from 'react-native-status-bar-height';
 import { registerMerchant } from '../api/merchant';
-import SocialLogin from './shared/SocialLogin';
+// import SocialLogin from './shared/SocialLogin';
 
 const RegisterMerchantScreen = () => {
   const navigation = useNavigation();
@@ -104,13 +104,13 @@ const RegisterMerchantScreen = () => {
         <Text style={styles.buttonText}>Registrarse</Text>
       </TouchableOpacity>
 
-      <View style={styles.dividerContainer}>
+      {/* <View style={styles.dividerContainer}>
         <View style={styles.line} />
         <Text style={styles.continueText}>Registrarse con</Text>
         <View style={styles.line} />
       </View>
 
-      <SocialLogin />
+      <SocialLogin /> */}
     </View>
   );
 };

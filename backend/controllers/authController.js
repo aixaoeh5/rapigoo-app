@@ -1,24 +1,34 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
 const admin = require('../firebaseAdmin');
+const emailService = require('../utils/emailService');
 
-// Configuración de transporte común
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+// Función de retry para operaciones MongoDB
+const retryOperation = async (operation, maxRetries = 3, delay = 1000) => {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await operation();
+    } catch (error) {
+      console.log(`🔄 Intento ${i + 1}/${maxRetries} falló:`, error.message);
+      
+      if (i === maxRetries - 1) throw error;
+      
+      // Backoff exponencial
+      await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
+    }
+  }
+};
 
 // LOGIN
 exports.loginUser = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    const user = await User.findOne({ email });
+    const user = await retryOperation(() => 
+      User.findOne({ email }).maxTimeMS(8000)
+    );
+    
     if (!user) return res.status(400).json({ message: 'Usuario no encontrado' });
 
     if (!user.isVerified) {
@@ -30,13 +40,24 @@ exports.loginUser = async (req, res) => {
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
+    // Construir respuesta del usuario según el rol
+    const userResponse = {
+      id: user._id,
+      name: user.name,
+      role: user.role,
+    };
+
+    // Agregar campos específicos según el rol
+    if (user.role === 'comerciante') {
+      userResponse.merchantStatus = user.merchantStatus;
+    } else if (user.role === 'delivery') {
+      userResponse.deliveryStatus = user.deliveryStatus;
+      console.log('🚚 Debug delivery login - deliveryStatus:', user.deliveryStatus);
+    }
+
     res.status(200).json({
       token,
-      user: {
-        id: user._id,
-        name: user.name,
-        role: user.role,
-      },
+      user: userResponse,
     });
   } catch (err) {
     console.error('❌ Error en login:', err);
@@ -51,7 +72,9 @@ exports.verifyPassword = async (req, res) => {
   if (!password) return res.status(400).json({ message: 'La contraseña es requerida' });
 
   try {
-    const user = await User.findById(req.user.id); 
+    const user = await retryOperation(() => 
+      User.findById(req.user.id).maxTimeMS(8000)
+    );
     if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
 
     const isMatch = await bcrypt.compare(password, user.password);
@@ -78,15 +101,21 @@ exports.registerUser = async (req, res) => {
   }
 
   try {
-    const existingVerifiedUser = await User.findOne({ email, isVerified: true });
+    const existingVerifiedUser = await retryOperation(() => 
+      User.findOne({ email, isVerified: true }).maxTimeMS(8000)
+    );
     if (existingVerifiedUser) {
       return res.status(400).json({ message: 'El correo ya está registrado' });
     }
 
-    const existingUser = await User.findOne({ email });
+    const existingUser = await retryOperation(() => 
+      User.findOne({ email }).maxTimeMS(8000)
+    );
 
     if (existingUser && existingUser.status === 'rechazado') {
-      await User.deleteOne({ email });
+      await retryOperation(() => 
+        User.deleteOne({ email }).maxTimeMS(8000)
+      );
     }
 
     if (existingUser && !existingUser.isVerified) {
@@ -95,7 +124,9 @@ exports.registerUser = async (req, res) => {
         existingUser.verificationCodeExpires < Date.now();
 
       if (isExpired) {
-        await User.deleteOne({ _id: existingUser._id });
+        await retryOperation(() => 
+          User.deleteOne({ _id: existingUser._id }).maxTimeMS(8000)
+        );
       } else {
         return res
           .status(400)
@@ -115,21 +146,9 @@ exports.registerUser = async (req, res) => {
       verificationCodeExpires: new Date(Date.now() + 10 * 60 * 1000), 
     });
 
-    await user.save();
+    await retryOperation(() => user.save());
 
-    await transporter.sendMail({
-      from: `"Rapigoo 🚀" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Verifica tu cuenta en Rapigoo 🛵',
-      html: `
-        <div style="font-family: Arial, sans-serif; padding: 20px;">
-          <h2>¡Hola ${name || 'usuario'}!</h2>
-          <p>Tu código de verificación es:</p>
-          <h1>${verificationCode}</h1>
-          <p>Ingresalo en la app para activar tu cuenta.</p>
-        </div>
-      `,
-    });
+    await emailService.sendVerificationCode(email, verificationCode, name);
 
     res
       .status(201)
@@ -296,14 +315,11 @@ exports.resendVerificationCode = async (req, res) => {
         ? `<p>Estás intentando recuperar tu contraseña. Tu código es:</p><h1>${newCode}</h1>`
         : `<p>Tu código de verificación es:</p><h1>${newCode}</h1>`;
 
-    const mailOptions = {
-      from: `"Rapigoo 🚀" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject,
-      html: `<div style="font-family: Arial, sans-serif; padding: 20px;">${html}</div>`,
-    };
-
-    await transporter.sendMail(mailOptions);
+    if (context === 'reset') {
+      await emailService.sendPasswordResetCode(email, newCode);
+    } else {
+      await emailService.sendVerificationCode(email, newCode, user.name);
+    }
 
     res.status(200).json({ success: true, message: 'Código enviado al correo' });
   } catch (err) {
@@ -380,28 +396,7 @@ exports.forgotPassword = async (req, res) => {
     user.verificationCode = resetCode;
     await user.save();
 
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-
-    const mailOptions = {
-      from: `"Rapigoo 🚀" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: '🔐 Recuperación de contraseña',
-      html: `
-        <div style="font-family: Arial, sans-serif; padding: 20px;">
-          <h2>Hola 👋</h2>
-          <p>Tu código de recuperación es:</p>
-          <h1>${resetCode}</h1>
-        </div>
-      `,
-    };
-
-    await transporter.sendMail(mailOptions);
+    await emailService.sendPasswordResetCode(email, resetCode);
 
     res.status(200).json({ success: true, message: 'Código enviado al correo' });
   } catch (err) {
@@ -410,8 +405,41 @@ exports.forgotPassword = async (req, res) => {
   }
 };
 
-// UPDATE USER PROFILE
+// CAMBIAR CONTRASEÑA
+exports.changePassword = async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
 
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ message: 'Se requieren la contraseña actual y la nueva' });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ message: 'La nueva contraseña debe tener al menos 6 caracteres' });
+  }
+
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) return res.status(400).json({ message: 'Contraseña actual incorrecta' });
+
+    if (currentPassword === newPassword) {
+      return res.status(400).json({ message: 'La nueva contraseña debe ser diferente a la actual' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    await user.save();
+
+    res.status(200).json({ message: 'Contraseña cambiada exitosamente' });
+  } catch (error) {
+    console.error('❌ Error al cambiar contraseña:', error);
+    res.status(500).json({ message: 'Error al cambiar la contraseña' });
+  }
+};
+
+// UPDATE USER PROFILE
 exports.updateUserProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user.id); 
@@ -430,12 +458,94 @@ exports.updateUserProfile = async (req, res) => {
     user.phone = req.body.phone || user.phone;
     user.avatar = req.body.avatar || user.avatar;
 
+    // Actualizar dirección de entrega si se proporciona
+    if (req.body.deliveryAddress) {
+      user.deliveryAddress = {
+        coordinates: req.body.deliveryAddress.coordinates || user.deliveryAddress?.coordinates,
+        street: req.body.deliveryAddress.street || user.deliveryAddress?.street || '',
+        city: req.body.deliveryAddress.city || user.deliveryAddress?.city || '',
+        state: req.body.deliveryAddress.state || user.deliveryAddress?.state || '',
+        zipCode: req.body.deliveryAddress.zipCode || user.deliveryAddress?.zipCode || '',
+        landmarks: req.body.deliveryAddress.landmarks || user.deliveryAddress?.landmarks || '',
+        instructions: req.body.deliveryAddress.instructions || user.deliveryAddress?.instructions || ''
+      };
+    }
+
     const updatedUser = await user.save();
 
-    res.status(200).json({ message: 'Perfil actualizado', user: updatedUser });
+    res.status(200).json({ 
+      success: true,
+      message: 'Perfil actualizado', 
+      user: updatedUser 
+    });
   } catch (error) {
     console.error('❌ Error al actualizar perfil:', error);
     res.status(500).json({ message: 'Error al actualizar perfil' });
+  }
+};
+
+// UPDATE DELIVERY ADDRESS (endpoint específico)
+exports.updateDeliveryAddress = async (req, res) => {
+  try {
+    console.log('📍 Actualizando dirección de entrega para usuario:', req.user.id);
+    console.log('📍 Datos recibidos:', JSON.stringify(req.body, null, 2));
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Usuario no encontrado' 
+      });
+    }
+
+    const { deliveryAddress } = req.body;
+    if (!deliveryAddress) {
+      return res.status(400).json({
+        success: false,
+        message: 'Datos de dirección de entrega requeridos'
+      });
+    }
+
+    // Validar coordenadas
+    if (!deliveryAddress.coordinates || deliveryAddress.coordinates.length !== 2) {
+      return res.status(400).json({
+        success: false,
+        message: 'Coordenadas válidas requeridas'
+      });
+    }
+
+    // Actualizar dirección de entrega
+    user.deliveryAddress = {
+      coordinates: deliveryAddress.coordinates,
+      street: deliveryAddress.street || '',
+      city: deliveryAddress.city || 'Santo Domingo',
+      state: deliveryAddress.state || 'Distrito Nacional',
+      zipCode: deliveryAddress.zipCode || '10101',
+      landmarks: deliveryAddress.landmarks || '',
+      instructions: deliveryAddress.instructions || ''
+    };
+
+    const updatedUser = await user.save();
+    
+    console.log('✅ Dirección de entrega actualizada exitosamente');
+
+    res.status(200).json({
+      success: true,
+      message: 'Dirección de entrega actualizada exitosamente',
+      user: {
+        id: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        deliveryAddress: updatedUser.deliveryAddress
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error actualizando dirección de entrega:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor'
+    });
   }
 };
 

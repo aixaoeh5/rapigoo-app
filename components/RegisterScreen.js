@@ -13,7 +13,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { getStatusBarHeight } from 'react-native-status-bar-height';
 import { registerUser } from '../api/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import SocialLogin from './shared/SocialLogin';
+// import SocialLogin from './shared/SocialLogin';
 
 const RegisterScreen = () => {
   const navigation = useNavigation();
@@ -105,13 +105,13 @@ const RegisterScreen = () => {
         <Text style={styles.buttonText}>Registrarse</Text>
       </TouchableOpacity>
 
-      <View style={styles.dividerContainer}>
+      {/* <View style={styles.dividerContainer}>
         <View style={styles.line} />
         <Text style={styles.continueText}>Registrarse con</Text>
         <View style={styles.line} />
       </View>
 
-      <SocialLogin />
+      <SocialLogin /> */}
     </View>
   );
 };

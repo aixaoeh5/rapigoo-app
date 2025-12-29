@@ -45,9 +45,15 @@ export default function VerifyRegisterCodeScreen({ route }) {
       });
 
       if (token && user) {
-        await AsyncStorage.setItem('user', JSON.stringify(user));
+        await AsyncStorage.setItem('userData', JSON.stringify(user));
         await AsyncStorage.setItem('token', token);
-        navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+        
+        // Redirigir a configuración de ubicación para clientes
+        if (user.role === 'client') {
+          navigation.navigate('ClientLocationSetup');
+        } else {
+          navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+        }
       } else {
         Alert.alert('⚠️ Código incorrecto');
       }

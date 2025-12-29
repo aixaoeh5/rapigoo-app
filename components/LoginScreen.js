@@ -7,35 +7,75 @@ import {
   TouchableOpacity,
   Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { getStatusBarHeight } from 'react-native-status-bar-height';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loginUser } from '../api/auth';
-import SocialLogin from './shared/SocialLogin';
+import { useTheme } from './context/ThemeContext';
+import LoadingState from './shared/LoadingState';
+import ValidatedInput from './shared/ValidatedInput';
+import useFormValidation from '../hooks/useFormValidation';
+// import SocialLogin from './shared/SocialLogin';
 
 const LoginScreen = () => {
   const navigation = useNavigation();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const { theme } = useTheme();
+  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const statusBarHeight = getStatusBarHeight();
+
+  // Form validation setup
+  const {
+    values,
+    errors,
+    touched,
+    isValid,
+    handleChange,
+    handleBlur,
+    validateAll,
+  } = useFormValidation(
+    {
+      email: '',
+      password: '',
+    },
+    {
+      email: ['required', 'email'],
+      password: ['required', { type: 'minLength', params: 6 }],
+    }
+  );
 
   useEffect(() => {
     const checkToken = async () => {
-      const token = await AsyncStorage.getItem('token');
-      if (token) {
-        console.log('🔓 Token ya existe, navegando a Home');
-        navigation.navigate('Home');
+      try {
+        const token = await AsyncStorage.getItem('token');
+        if (token) {
+          console.log('🔓 Token ya existe, navegando a Home');
+          navigation.replace('Home');
+        }
+      } catch (error) {
+        console.error('Error checking token:', error);
+      } finally {
+        setInitialLoading(false);
       }
     };
     checkToken();
-  }, []);
+  }, []); // Remove navigation from dependencies to prevent re-renders
 
   const handleLogin = async () => {
+    if (!validateAll()) {
+      Alert.alert('Error', 'Por favor, corrige los errores en el formulario');
+      return;
+    }
+
     try {
-      const user = await loginUser({ email, password });
+      setLoading(true);
+      const user = await loginUser({ 
+        email: values.email, 
+        password: values.password 
+      });
       console.log('🪪 Usuario logueado:', user);
       navigation.navigate('Home');
     } catch (error) {
@@ -47,53 +87,161 @@ const LoginScreen = () => {
         'Error',
         error.response?.data?.message || 'Error al iniciar sesión'
       );
+    } finally {
+      setLoading(false);
     }
   };
 
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      padding: 20,
+      backgroundColor: theme.colors.background,
+      justifyContent: 'center',
+    },
+    backButton: {
+      position: 'absolute',
+      top: statusBarHeight + 10,
+      left: 10,
+      zIndex: 10,
+    },
+    title: {
+      fontSize: 24,
+      fontWeight: 'bold',
+      marginBottom: 30,
+      textAlign: 'center',
+      color: theme.colors.text,
+    },
+    input: {
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 8,
+      padding: 15,
+      fontSize: 16,
+      backgroundColor: theme.colors.surface,
+      color: theme.colors.text,
+      marginBottom: 15,
+    },
+    forgotPasswordButton: {
+      alignItems: 'center',
+      marginTop: 20,
+    },
+    forgotPasswordText: {
+      color: theme.colors.primary,
+      fontSize: 16,
+    },
+    button: {
+      backgroundColor: theme.colors.primary,
+      padding: 15,
+      borderRadius: 8,
+      alignItems: 'center',
+      marginTop: 10,
+    },
+    buttonDisabled: {
+      backgroundColor: '#ccc',
+      opacity: 0.6,
+    },
+    buttonText: {
+      color: 'white',
+      fontSize: 16,
+      fontWeight: 'bold',
+    },
+    forgotPassword: {
+      textAlign: 'center',
+      marginTop: 20,
+      color: theme.colors.primary,
+      fontSize: 16,
+    },
+    registerContainer: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      marginTop: 20,
+    },
+    registerText: {
+      fontSize: 16,
+      color: theme.colors.textSecondary,
+    },
+    registerLink: {
+      fontSize: 16,
+      color: theme.colors.primary,
+      fontWeight: 'bold',
+    },
+    socialButtonsContainer: {
+      marginTop: 30,
+      alignItems: 'center',
+    },
+  });
+
+  if (initialLoading) {
+    return (
+      <LoadingState 
+        message="Verificando sesión..." 
+        color={theme.colors.primary}
+      />
+    );
+  }
+
   return (
     <View style={[styles.container, { paddingTop: statusBarHeight }]}>
-<TouchableOpacity style={styles.backButton} onPress={() => navigation.navigate('UserType')}>
-  <Icon name="chevron-back" size={26} color="black" />
-</TouchableOpacity>
+      <TouchableOpacity 
+        style={styles.backButton} 
+        onPress={() => navigation.navigate('UserType')}
+        disabled={loading}
+      >
+        <Icon name="chevron-back" size={26} color={theme.colors.text} />
+      </TouchableOpacity>
 
       <Text style={styles.title}>Bienvenido de nuevo</Text>
 
-      <Text style={styles.label}>Ingresar Email</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
+      <ValidatedInput
+        label="Email"
+        placeholder="Ingresa tu email"
         keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
+        value={values.email}
+        onChangeText={(value) => handleChange('email', value)}
+        onBlur={() => handleBlur('email')}
+        error={errors.email}
+        touched={touched.email}
+        autoCapitalize="none"
+        leftIcon={<Icon name="mail-outline" size={20} color={theme.colors.textSecondary} />}
+        required
       />
 
-      <Text style={styles.label}>Ingresar contraseña</Text>
-      <View style={styles.passwordWrapper}>
-        <TextInput
-          style={styles.passwordInput}
-          placeholder="Contraseña"
-          secureTextEntry={!showPassword}
-          value={password}
-          onChangeText={setPassword}
-        />
-        <TouchableOpacity
-          onPress={() => setShowPassword(!showPassword)}
-          style={styles.passwordIcon}
-        >
-          <Icon name={showPassword ? 'eye-off' : 'eye'} size={20} color="gray" />
-        </TouchableOpacity>
-      </View>
+      <ValidatedInput
+        label="Contraseña"
+        placeholder="Ingresa tu contraseña"
+        secureTextEntry={true}
+        value={values.password}
+        onChangeText={(value) => handleChange('password', value)}
+        onBlur={() => handleBlur('password')}
+        error={errors.password}
+        touched={touched.password}
+        showPasswordToggle={true}
+        leftIcon={<Icon name="lock-closed-outline" size={20} color={theme.colors.textSecondary} />}
+        required
+      />
 
       <TouchableOpacity
-      style={styles.forgotPasswordButton}
-      onPress={() => navigation.navigate('ForgotPassword')}
+        style={styles.forgotPasswordButton}
+        onPress={() => navigation.navigate('ForgotPassword')}
       >
-      <Text style={styles.forgotPasswordText}>¿Olvidaste la contraseña?</Text>
+        <Text style={styles.forgotPasswordText}>¿Olvidaste la contraseña?</Text>
       </TouchableOpacity>
 
 
-      <TouchableOpacity style={styles.button} onPress={handleLogin}>
-        <Text style={styles.buttonText}>Iniciar Sesión</Text>
+      <TouchableOpacity 
+        style={[
+          styles.button, 
+          (loading || !isValid) && styles.buttonDisabled
+        ]} 
+        onPress={handleLogin}
+        disabled={loading || !isValid}
+      >
+        {loading ? (
+          <ActivityIndicator size="small" color="#fff" />
+        ) : (
+          <Text style={styles.buttonText}>Iniciar Sesión</Text>
+        )}
       </TouchableOpacity>
 
       <Text style={styles.grayText}>¿No tienes una cuenta?</Text>
@@ -112,111 +260,11 @@ const LoginScreen = () => {
       </View>
 
       <View style={styles.socialButtonsContainer}>
-        <SocialLogin />
+        {/* <SocialLogin /> */}
       </View>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-    backgroundColor: 'white',
-    justifyContent: 'center',
-  },
-
-  backButton: {
-    position: 'absolute',
-    top: 70,
-    left: 20,
-    zIndex: 10,
-    padding: 10,
-  },
-
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 30,
-    alignSelf: 'center',
-  },
-  label: {
-    fontSize: 14,
-    marginLeft: 10,
-    marginBottom: 5,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 20,
-  },
-  passwordWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 10,
-    marginBottom: 20,
-    paddingHorizontal: 10,
-  },
-  passwordInput: {
-    flex: 1,
-    padding: 15,
-  },
-  passwordIcon: {
-    padding: 10,
-  },
-  button: {
-    backgroundColor: 'black',
-    padding: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  createAccountButton: {
-    backgroundColor: 'black',
-    padding: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  buttonText: {
-    color: 'white',
-    fontWeight: 'bold',
-  },
-  forgotPasswordButton: {
-    alignSelf: 'flex-end',
-    marginBottom: 10,
-  },
-  forgotPasswordText: {
-    color: 'gray',
-  },
-  grayText: {
-    color: 'gray',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 20,
-  },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 20,
-  },
-  line: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#ccc',
-  },
-  continueText: {
-    marginHorizontal: 10,
-    color: 'gray',
-  },
-  socialButtonsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-});
-
 export default LoginScreen;
+

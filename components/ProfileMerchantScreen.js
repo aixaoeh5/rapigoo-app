@@ -13,7 +13,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getStatusBarHeight } from 'react-native-status-bar-height';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
+import apiClient from '../api/apiClient';
 
 const ProfileMerchantScreen = () => {
   const navigation = useNavigation();
@@ -34,9 +34,7 @@ const ProfileMerchantScreen = () => {
         if (!token) return;
 
         try {
-          const res = await axios.get('http://10.0.2.2:5000/api/auth/user', {
-            headers: { Authorization: `Bearer ${token}` },
-          });
+          const res = await apiClient.get('/auth/user');
 
           const data = res.data;
 
@@ -44,7 +42,14 @@ const ProfileMerchantScreen = () => {
           setEmail(data.email);
           setPhone(data.phone || '');
           setAvatar(data.avatar || '');
-          setAddress(data.business?.address || '');
+          const businessAddress = data.business?.address;
+          if (typeof businessAddress === 'string') {
+            setAddress(businessAddress);
+          } else if (businessAddress?.street) {
+            setAddress(`${businessAddress.street}, ${businessAddress.city}, ${businessAddress.state}`);
+          } else {
+            setAddress('');
+          }
           setScheduleOpen(data.business?.schedule?.opening || '');
           setScheduleClose(data.business?.schedule?.closing || '');
           setSocials(data.business?.socials || '');
@@ -62,7 +67,9 @@ const ProfileMerchantScreen = () => {
   const handleLogout = async () => {
     try {
       await AsyncStorage.removeItem('token');
-      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+      await AsyncStorage.removeItem('userData');
+      await AsyncStorage.removeItem('user');
+      navigation.reset({ index: 0, routes: [{ name: 'UserType' }] });
     } catch (err) {
       console.error('❌ Error al cerrar sesión:', err);
     }
@@ -118,8 +125,22 @@ const ProfileMerchantScreen = () => {
       </View>
 
       <View style={styles.sectionList}>
+        <TouchableOpacity 
+          style={styles.listItem}
+          onPress={() => navigation.navigate('MerchantLocation')}
+        >
+          <View style={styles.listItemContent}>
+            <Icon name="location" size={20} color="#FF6B6B" style={styles.listIcon} />
+            <Text style={styles.listText}>Ubicación del Negocio</Text>
+          </View>
+          <Icon name="chevron-forward" size={16} color="#555" />
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.listItem}>
-          <Text style={styles.listText}>Ayuda</Text>
+          <View style={styles.listItemContent}>
+            <Icon name="help-circle" size={20} color="#666" style={styles.listIcon} />
+            <Text style={styles.listText}>Ayuda</Text>
+          </View>
           <Icon name="chevron-forward" size={16} color="#555" />
         </TouchableOpacity>
 
@@ -200,9 +221,17 @@ const styles = StyleSheet.create({
   listItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: 15,
     borderBottomWidth: 1,
     borderColor: '#eee',
+  },
+  listItemContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  listIcon: {
+    marginRight: 12,
   },
   listText: {
     fontSize: 16,

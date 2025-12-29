@@ -1,10 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, memo } from 'react';
 import {
   View,
   Text,
   FlatList,
   StyleSheet,
-  Image,
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
@@ -12,6 +11,45 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { getMerchantsByCategory } from '../api/merchant';
 import { getStatusBarHeight } from 'react-native-status-bar-height';
+import LazyImage from './shared/LazyImage';
+
+// Memoized MerchantItem component
+const MerchantItem = memo(({ item, onPress }) => (
+  <TouchableOpacity
+    style={styles.card}
+    onPress={() => onPress(item._id)}
+  >
+    <LazyImage
+      source={{ uri: item.avatar || 'https://cdn-icons-png.flaticon.com/512/149/149071.png' }}
+      style={styles.avatar}
+      resizeMode="cover"
+      showLoader={true}
+      fadeDuration={200}
+    />
+    <View>
+      <Text style={styles.name}>
+        {item.business?.businessName || item.name}
+      </Text>
+      <Text style={styles.address}>
+        {typeof item.business?.address === 'string' 
+          ? item.business.address 
+          : item.business?.address?.street 
+            ? `${item.business.address.street}, ${item.business.address.city}` 
+            : 'Dirección no disponible'}
+      </Text>
+      <Text style={styles.schedule}>
+        Horario: {item.business?.schedule?.opening || '--'} - {item.business?.schedule?.closing || '--'}
+      </Text>
+    </View>
+    <Icon name="chevron-forward" size={20} color="#888" style={{ marginLeft: 'auto' }} />
+  </TouchableOpacity>
+), (prevProps, nextProps) => {
+  return (
+    prevProps.item._id === nextProps.item._id &&
+    prevProps.item.business?.businessName === nextProps.item.business?.businessName &&
+    prevProps.item.avatar === nextProps.item.avatar
+  );
+});
 
 const CategoryScreen = ({ route }) => {
   const { category } = route.params;
@@ -36,6 +74,16 @@ const CategoryScreen = ({ route }) => {
 
     fetchMerchants();
   }, [category]);
+
+  const handleMerchantPress = useCallback((merchantId) => {
+    navigation.navigate('MerchantProfile', { merchantId });
+  }, [navigation]);
+
+  const renderItem = useCallback(({ item }) => (
+    <MerchantItem item={item} onPress={handleMerchantPress} />
+  ), [handleMerchantPress]);
+
+  const keyExtractor = useCallback((item) => item._id, []);
 
   if (loading) {
     return (
@@ -63,30 +111,8 @@ const CategoryScreen = ({ route }) => {
 
       <FlatList
         data={merchants}
-        keyExtractor={(item) => item._id}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.card}
-            onPress={() => navigation.navigate('MerchantProfile', { merchantId: item._id })}
-          >
-            <Image
-              source={{ uri: item.avatar || 'https://cdn-icons-png.flaticon.com/512/149/149071.png' }}
-              style={styles.avatar}
-            />
-            <View>
-              <Text style={styles.name}>
-                {item.business?.businessName || item.name}
-              </Text>
-              <Text style={styles.address}>
-                {item.business?.address || 'Dirección no disponible'}
-              </Text>
-              <Text style={styles.schedule}>
-                Horario: {item.business?.schedule?.opening || '--'} - {item.business?.schedule?.closing || '--'}
-              </Text>
-            </View>
-            <Icon name="chevron-forward" size={20} color="#888" style={{ marginLeft: 'auto' }} />
-          </TouchableOpacity>
-        )}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
       />
     </View>
   );
